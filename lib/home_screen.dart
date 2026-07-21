@@ -2,7 +2,9 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'dart:async';
 import 'lock_screen_popup.dart';
+import 'onboarding_screen.dart';
 import 'settings_screen.dart';
+import 'services/app_closure_handler.dart';
 import 'services/usage_tracker.dart';
 import 'services/storage_service.dart';
 import 'models/app_group.dart';
@@ -32,6 +34,46 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _tracker.startTracking();
     _loadUsage();
     _refreshTimer = Timer.periodic(const Duration(seconds: 60), (_) => _loadUsage());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkPermissionsOnStart());
+  }
+
+  Future<void> _checkPermissionsOnStart() async {
+    final hasUsage = await AppClosureHandler().hasUsageAccess();
+    final hasAccessibility = await AppClosureHandler().hasAccessibilityEnabled();
+    if (!mounted) return;
+    if (!hasUsage || !hasAccessibility) {
+      final missing = [
+        if (!hasUsage) 'Usage Access',
+        if (!hasAccessibility) 'Accessibility Service',
+      ];
+      showCupertinoDialog(
+        context: context,
+        builder: (ctx) => CupertinoAlertDialog(
+          title: const Text('Permissions Required'),
+          content: Text(
+            'ScreenTimeLock needs the following permissions to function:\n\n'
+            '${missing.map((p) => '• $p').join('\n')}\n\n'
+            'Tap "Open Settings" to enable them.',
+          ),
+          actions: [
+            CupertinoDialogAction(
+              isDestructiveAction: true,
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Later'),
+            ),
+            CupertinoDialogAction(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                Navigator.of(context).push(
+                  CupertinoPageRoute(builder: (_) => const OnboardingScreen()),
+                );
+              },
+              child: const Text('Open Settings'),
+            ),
+          ],
+        ),
+      );
+    }
   }
 
   @override

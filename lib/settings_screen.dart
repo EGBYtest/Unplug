@@ -1,6 +1,7 @@
 import 'dart:ui';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'services/ad_reward_system.dart';
 import 'services/message_verification.dart';
 import 'services/storage_service.dart';
@@ -29,6 +30,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     super.initState();
     _groups = List.from(_storage.loadGroups());
     _adRewardSeconds = _storage.adRewardSeconds;
+    if (!_storage.settingsLockEnabled) _isUnlocked = true;
   }
 
   // ─── Unlock Logic ────────────────────────────────────────────────────────
@@ -36,7 +38,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void _unlockSettings() => setState(() => _isUnlocked = true);
 
   void _watchAdToUnlock() {
-    AdRewardSystem().showRewardedAd(() => _unlockSettings(), () => _showTypeChallenge());
+    AdRewardSystem().showRewardedAd(_unlockSettings, () {});
   }
 
   void _showTypeChallenge() {
@@ -252,14 +254,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   // ─── Save & Lock ──────────────────────────────────────────────────────────
-
   Future<void> _saveAndLock() async {
     setState(() => _saving = true);
     await _storage.saveGroups(_groups);
     await _storage.saveAdRewardSeconds(_adRewardSeconds);
     _tracker.appGroups = List.from(_groups);
+
+    // Auto-enable settings lock only once after first save
+    if (!_storage.settingsLockAutoEnabled) {
+      await _storage.setSettingsLockEnabled(true);
+      await _storage.setSettingsLockAutoEnabled();
+    }
+
     if (mounted) {
-      setState(() { _saving = false; _isUnlocked = false; });
+      setState(() { _saving = false; _isUnlocked = _storage.settingsLockEnabled ? false : true; });
       Navigator.of(context).pop();
     }
   }
@@ -316,6 +324,34 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     title: const Text('Add Group', style: TextStyle(color: Colors.white)),
                     onTap: _addGroup,
                   ),
+                // ── Settings Lock Toggle ──
+                CupertinoListSection.insetGrouped(
+                  backgroundColor: Colors.black,
+                  decoration: BoxDecoration(color: const Color(0xFF1C1C1E), borderRadius: BorderRadius.circular(12)),
+                  header: const Text('SECURITY', style: TextStyle(color: Colors.white54)),
+                  children: [
+                    CupertinoListTile(
+                      backgroundColor: const Color(0xFF1C1C1E),
+                      leading: const Icon(CupertinoIcons.lock_fill, color: Color(0xFFFF9F0A), size: 22),
+                      title: const Text('Lock Settings', style: TextStyle(color: Colors.white)),
+                      subtitle: Text(
+                        _storage.settingsLockEnabled
+                            ? 'Challenge required to edit'
+                            : 'No lock on settings',
+                        style: const TextStyle(color: Colors.white38, fontSize: 12),
+                      ),
+                      trailing: CupertinoSwitch(
+                        value: _storage.settingsLockEnabled,
+                        onChanged: (val) async {
+                          await _storage.setSettingsLockEnabled(val);
+                          setState(() {
+                            if (!val) _isUnlocked = true;
+                          });
+                        },
+                      ),
+                    ),
+                  ],
+                ),
                 // ── Ad Ratio ──
                 CupertinoListSection.insetGrouped(
                   backgroundColor: Colors.black,
@@ -351,12 +387,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       title: const Text('Open Source', style: TextStyle(color: Colors.white)),
                       additionalInfo: const Text('GitHub', style: TextStyle(color: Color(0xFF0A84FF))),
                       trailing: const CupertinoListTileChevron(),
+                      onTap: () async {
+                        final uri = Uri.parse('https://github.com/EGBYtest/APp-idea');
+                        if (await canLaunchUrl(uri)) {
+                          await launchUrl(uri);
+                        }
+                      },
                     ),
                     CupertinoListTile(
                       backgroundColor: const Color(0xFF1C1C1E),
                       leading: const Icon(CupertinoIcons.info_circle_fill, color: Colors.white38, size: 22),
                       title: const Text('Version', style: TextStyle(color: Colors.white)),
-                      additionalInfo: const Text('1.0.0', style: TextStyle(color: Colors.white54)),
+                      additionalInfo: const Text('1.1 (Beta)', style: TextStyle(color: Colors.white54)),
                     ),
                   ],
                 ),

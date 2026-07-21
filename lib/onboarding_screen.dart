@@ -155,7 +155,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> with WidgetsBinding
               _PermissionCard(
                 icon: CupertinoIcons.eye_fill,
                 title: 'Accessibility Service',
-                description: 'Detects when a time-limited app is opened and redirects you to the lock screen.',
+                description: 'Detects when a time-limited app is opened and redirects you to the lock screen.\n\nOn some devices (OxygenOS/ColorOS), tap "Downloaded apps" then select ScreenTimeLock.',
                 isGranted: _hasAccessibility,
                 onTap: () async {
                   await AppClosureHandler().openAccessibilitySettings();

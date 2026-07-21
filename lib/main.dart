@@ -48,7 +48,6 @@ class _ScreenTimeLockAppState extends State<ScreenTimeLockApp> {
 
   @override
   Widget build(BuildContext context) {
-    // Skip onboarding if already completed
     final bool skipOnboarding = StorageService().onboardingComplete;
 
     return CupertinoApp(

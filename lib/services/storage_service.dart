@@ -35,6 +35,20 @@ class StorageService {
     await _prefs?.setInt('ad_reward_seconds', seconds);
   }
 
+  // ─── Settings Lock ──────────────────────────────────────────────────────────
+
+  bool get settingsLockEnabled => _prefs?.getBool('settings_lock_enabled') ?? false;
+
+  Future<void> setSettingsLockEnabled(bool value) async {
+    await _prefs?.setBool('settings_lock_enabled', value);
+  }
+
+  bool get settingsLockAutoEnabled => _prefs?.getBool('settings_lock_auto_enabled') ?? false;
+
+  Future<void> setSettingsLockAutoEnabled() async {
+    await _prefs?.setBool('settings_lock_auto_enabled', true);
+  }
+
   // ─── App Groups ────────────────────────────────────────────────────────────
 
   List<AppGroup> loadGroups() {

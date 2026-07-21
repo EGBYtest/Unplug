@@ -14,6 +14,7 @@ class MainActivity : FlutterActivity() {
 
     private val CHANNEL = "app_closure"
     private var methodChannel: MethodChannel? = null
+    private var pendingLockScreenApp: String? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -49,12 +50,12 @@ class MainActivity : FlutterActivity() {
                     result.success(mode == android.app.AppOpsManager.MODE_ALLOWED)
                 }
                 "hasAccessibilityEnabled" -> {
-                    val accessibilityEnabled = Settings.Secure.getInt(
+                    val ourService = "$packageName/${packageName}.UsageAccessibilityService"
+                    val enabledServices = Settings.Secure.getString(
                         contentResolver,
-                        Settings.Secure.ACCESSIBILITY_ENABLED,
-                        0
-                    )
-                    result.success(accessibilityEnabled == 1)
+                        Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+                    ) ?: ""
+                    result.success(enabledServices.split(":").contains(ourService))
                 }
                 "getInstalledApps" -> {
                     val pm = packageManager
@@ -81,8 +82,17 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
-        
+
         handleIntent(intent)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        pendingLockScreenApp?.let { appName ->
+            pendingLockScreenApp = null
+            // Flutter handler is definitely registered by now
+            methodChannel?.invokeMethod("showLockScreen", mapOf("appName" to appName))
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -93,7 +103,7 @@ class MainActivity : FlutterActivity() {
     private fun handleIntent(intent: Intent) {
         val appName = intent.getStringExtra("SHOW_LOCK_SCREEN_APP_NAME")
         if (appName != null) {
-            methodChannel?.invokeMethod("showLockScreen", mapOf("appName" to appName))
+            pendingLockScreenApp = appName
             intent.removeExtra("SHOW_LOCK_SCREEN_APP_NAME")
         }
     }

@@ -148,17 +148,24 @@ class UsageAccessibilityService : AccessibilityService() {
     private fun blockApp(groupName: String) {
         lastBlockTime = System.currentTimeMillis()
 
+        // 0. Try to dismiss floating windows / bubbles with global back action
+        try {
+            performGlobalAction(GLOBAL_ACTION_BACK)
+        } catch (_: Exception) {}
+
         // 1. Go to home screen
         val homeIntent = Intent(Intent.ACTION_MAIN)
         homeIntent.addCategory(Intent.CATEGORY_HOME)
         homeIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        homeIntent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
         startActivity(homeIntent)
 
-        // 2. Launch our app to show the lock popup
+        // 2. Launch our app to show the lock screen over everything
         val appIntent = Intent(this, MainActivity::class.java)
         appIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or
                 Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                Intent.FLAG_ACTIVITY_SINGLE_TOP
+                Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                Intent.FLAG_ACTIVITY_CLEAR_TASK
         appIntent.putExtra("SHOW_LOCK_SCREEN_APP_NAME", groupName)
         startActivity(appIntent)
     }
@@ -178,6 +185,10 @@ class UsageAccessibilityService : AccessibilityService() {
         } catch (e: Exception) {
             Log.e(TAG, "Failed to kill $packageToKill", e)
         }
+        // Extra attempt for floating windows — send another back press
+        try {
+            performGlobalAction(GLOBAL_ACTION_BACK)
+        } catch (_: Exception) {}
     }
 
     // ---------------------------------------------------------------------

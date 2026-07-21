@@ -1,5 +1,5 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/material.dart';
 import '../lock_screen_popup.dart';
 
 class AppClosureHandler {
@@ -57,12 +57,13 @@ class AppClosureHandler {
     }
   }
 
-  /// Displays the LockScreen popup (Flutter-side)
+  /// Displays the LockScreen as full-screen route (overlays floating windows)
   void showLockScreen(BuildContext context, String appName) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => LockScreenPopup(appName: appName),
+    Navigator.of(context).push(
+      CupertinoPageRoute(
+        builder: (_) => LockScreenPopup(appName: appName),
+        settings: const RouteSettings(name: 'lock_screen'),
+      ),
     );
   }
 }
