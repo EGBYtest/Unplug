@@ -1,68 +1,88 @@
 # ScreenTimeLock
 
-An Android screen time management app that helps you take control of your digital habits. Set daily time limits on groups of apps, and once exhausted, earn extra time by watching an ad or completing a typing challenge.
+> **v1.1 (Beta)** — Take control of your digital habits.
 
-> **Privacy-first, open source.** All data is stored locally on your device. Nothing is ever sent to any server.
+An Android screen time management app that helps you limit mindless app usage. Set daily time limits on app groups. Once exhausted, earn extra time by watching an ad or completing a typing challenge.
+
+> **Privacy-first, open source.** All data stored locally. Nothing leaves your device.
+
+---
+
+## Screenshots
+
+<p float="left">
+  <img src="screenshots/home_dashboard.png" width="200" alt="Home Dashboard" />
+  <img src="screenshots/app_picker.png" width="200" alt="App Picker" />
+  <img src="screenshots/lock_screen.png" width="200" alt="Lock Screen" />
+  <img src="screenshots/settings.png" width="200" alt="Settings" />
+</p>
+
+---
 
 ## Features
 
 ### App Group Limits
-- Group apps into categories (e.g., Social Media, Games, Entertainment)
-- Set a daily time limit per group (e.g., 30 min for social media)
-- Groups with a 0-minute limit are blocked immediately
+- Group apps into categories (Social Media, Games, Entertainment...)
+- Set daily time limit per group (30 min, 1 hour, or 0 = block immediately)
+- Saved locally, reset daily
 
 ### Real-Time Enforcement
-- An Android **Accessibility Service** listens for foreground app changes
-- When you exceed a group's limit, the app is blocked and a non-dismissible lock screen popup appears
-- Works with split-screen and Picture-in-Picture modes
+- **Accessibility Service** detects foreground app switches
+- Exceed limit → non-dismissible lock screen popup
+- Works in split-screen and PiP mode
 
 ### Bypass Mechanisms
-Once your time is exhausted, you can earn bonus time by:
-
-1. **Watch a Rewarded Ad** — Grants configurable bonus time (default: 1 minute per ad)
-2. **Type 100 Words Challenge** — Manually type a 100-word message to prove intentionality. Copy-paste is blocked.
+| Method | Bonus Time | Notes |
+|--------|-----------|-------|
+| Watch rewarded ad | +1 min (configurable) | Ad unit IDs in `ad_reward_system.dart` |
+| Type 100-word challenge | +1 min | Copy-paste blocked; forces intentionality |
 
 ### Locked Settings
-- Changing app limits requires watching an ad or passing the typing challenge
-- Prevents impulse changes to time limits
+- Changing limits requires ad or typing challenge
+- Toggle in Settings → SECURITY → Lock Settings
+- Prevents impulse tweaks
 
 ### Privacy Dashboard
-- Circular progress ring showing today's total screen time vs. limit
-- Per-group usage breakdown with visual progress bars
-- Color-coded indicators (green = safe, yellow = nearing limit, red = exhausted)
+- Circular progress ring — total screen time vs. limit
+- Per-group progress bars with color coding
+  - 🟢 Green = safe
+  - 🟡 Yellow = nearing limit
+  - 🔴 Red = exhausted
 
 ### Usage Statistics
-- "Groups" stat card — number of app groups configured
-- "Exhausted" stat card — groups that have hit their limit today
-- "Active" stat card — groups still within their limit
+- **Groups** — number of configured app groups
+- **Exhausted** — groups that hit limit today
+- **Active** — groups still within limit
+
+---
 
 ## Architecture
 
 ```
 ScreenTimeLock/
-├── lib/                           # Flutter/Dart code
-│   ├── main.dart                  # App entry point, CupertinoApp, method channel setup
-│   ├── home_screen.dart           # Main dashboard with ring + stat cards + app tiles
-│   ├── onboarding_screen.dart     # Permission setup flow
-│   ├── settings_screen.dart       # Locked settings (watch ad / type to unlock)
-│   ├── lock_screen_popup.dart     # Non-dismissible lock dialog with bypass options
+├── lib/
+│   ├── main.dart                    # Entry point, CupertinoApp, method channel
+│   ├── home_screen.dart             # Dashboard with ring + stats + app tiles
+│   ├── onboarding_screen.dart       # Permission setup flow
+│   ├── settings_screen.dart         # Locked settings (ad/type to unlock)
+│   ├── lock_screen_popup.dart       # Non-dismissible lock dialog + bypass
 │   ├── screens/
-│   │   └── app_picker_screen.dart # Searchable list of installed apps (User/System tabs)
+│   │   └── app_picker_screen.dart   # Searchable installed apps list
 │   ├── models/
-│   │   └── app_group.dart         # AppGroup model (name, packages, time limit)
+│   │   └── app_group.dart           # Group model (name, packages, limit)
 │   ├── services/
-│   │   ├── storage_service.dart   # SharedPreferences persistence (groups, bonuses, prefs)
-│   │   ├── usage_tracker.dart     # Dart-side usage polling via usage_stats package
-│   │   ├── app_closure_handler.dart # MethodChannel bridge to native Kotlin
-│   │   ├── ad_reward_system.dart  # Google Mobile Ads rewarded ad integration
-│   │   └── message_verification.dart # Typing challenge message generator/verifier
+│   │   ├── storage_service.dart     # SharedPreferences persistence
+│   │   ├── usage_tracker.dart       # Usage stats polling
+│   │   ├── app_closure_handler.dart # MethodChannel bridge to native
+│   │   ├── ad_reward_system.dart    # Google Mobile Ads integration
+│   │   └── message_verification.dart# Typing challenge logic
 │   └── utils/
-│       └── no_paste_formatter.dart # Blocks clipboard paste in text fields
+│       └── no_paste_formatter.dart  # Clipboard paste blocker
 ├── android/
 │   └── app/src/main/kotlin/com/example/app_idea/
-│       ├── MainActivity.kt        # FlutterActivity, MethodChannel handler
-│       ├── AppClosureHandler.kt   # Force-close / home screen redirect
-│       └── UsageAccessibilityService.kt # AccessibilityService monitoring & enforcement
+│       ├── MainActivity.kt          # FlutterActivity + MethodChannel
+│       ├── AppClosureHandler.kt     # Force-close / home redirect
+│       └── UsageAccessibilityService.kt # Foreground detection + enforcement
 └── pubspec.yaml
 ```
 
@@ -70,43 +90,45 @@ ScreenTimeLock/
 
 | Decision | Rationale |
 |----------|-----------|
-| **Local-only storage** | All data in SharedPreferences — no network calls, no server |
-| **Kotlin Accessibility Service** | Needed to detect foreground app switches and block apps in real-time |
-| **Dart-side usage stats** | Uses `usage_stats` package for the dashboard; native side re-reads SharedPreferences for enforcement |
-| **MethodChannel bridge** | `app_closure` channel handles all Flutter ↔ Android communication |
-| **Cupertino widgets** | iOS-style dark theme for a clean, premium feel |
-| **Typing challenge** | Forces intentional, mindful decision to bypass limits |
-| **No license** | All rights reserved |
+| **Local-only storage** | SharedPreferences — no server, no network calls |
+| **Kotlin Accessibility Service** | Real-time foreground app detection |
+| **Dart-side usage stats** | `usage_stats` package for dashboard; native re-reads prefs for enforcement |
+| **MethodChannel bridge** | `app_closure` channel for Flutter ↔ Android |
+| **Cupertino widgets** | iOS-style dark theme, premium feel |
+| **Typing challenge** | Forces mindful decision to bypass limits |
+| **No re-check on foreground** | Permissions checked once during onboarding |
+
+---
 
 ## Permissions
 
-ScreenTimeLock requires two Android permissions:
+| Permission | Purpose |
+|-----------|---------|
+| `PACKAGE_USAGE_STATS` | Read app usage for screen time tracking |
+| `BIND_ACCESSIBILITY_SERVICE` | Detect blocked app opens & enforce limits |
 
-1. **Usage Access** (`PACKAGE_USAGE_STATS`) — Read app usage statistics to track screen time
-2. **Accessibility Service** (`BIND_ACCESSIBILITY_SERVICE`) — Detect when a time-limited app is opened and enforce limits
+Both granted manually in system settings. On **OxygenOS/ColorOS**, navigate to:
+Settings → Accessibility → Downloaded apps → ScreenTimeLock.
 
-Both are requested during onboarding and must be manually granted in system settings.
+---
 
 ## Build & Run
 
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/screentimelock.git
-cd screentimelock
-
-# Get dependencies
+git clone https://github.com/EGBYtest/APp-idea.git
+cd APp-idea
 flutter pub get
-
-# Run on connected device (Android)
 flutter run
 ```
 
-> **Note:** The app currently uses Google Mobile Ads **test** ad unit IDs. Replace them with production IDs before releasing.
+> **Note:** Uses Google Mobile Ads **test** unit IDs. Replace before release.
 
 ### Requirements
-- Flutter SDK >= 3.0.0
-- Dart SDK >= 3.0.0
-- Android device/emulator (API 30+ recommended)
+- Flutter SDK ≥ 3.0.0
+- Dart SDK ≥ 3.0.0
+- Android API 30+ recommended
+
+---
 
 ## Tech Stack
 
@@ -114,5 +136,11 @@ flutter run
 - **Language:** Dart + Kotlin (native)
 - **Ads:** Google Mobile Ads SDK (rewarded video)
 - **Storage:** SharedPreferences
-- **Usage Stats:** `usage_stats` Flutter package
-- **Build:** Flutter CLI, Gradle
+- **Usage Stats:** `usage_stats` package
+- **Build:** Flutter CLI / Gradle
+
+---
+
+## License
+
+All rights reserved.
