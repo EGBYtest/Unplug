@@ -196,13 +196,50 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                             formatMinutes: _fmt,
                             isLast: isLast,
                             hasBans: group.hasBannedFeatures,
-                            onTap: () => showCupertinoDialog(
-                              context: context,
-                              builder: (_) => LockScreenPopup(
-                                appName: group.name,
-                                groupName: group.name,
-                              ),
-                            ).then((_) => _loadUsage()),
+                            onTap: bonusSeconds > 0
+                                ? () => showCupertinoModalPopup(
+                                  context: context,
+                                  builder: (ctx) => CupertinoActionSheet(
+                                    title: Text(group.name),
+                                    message: Text('${_fmt(bonusMinutes * 60)} bonus time remaining', style: const TextStyle(color: Color(0xFF30D158), fontSize: 12)),
+                                    actions: [
+                                      CupertinoActionSheetAction(
+                                        child: const Text('Get More Bonus Time'),
+                                        onPressed: () {
+                                          Navigator.pop(ctx);
+                                          showCupertinoDialog(
+                                            context: context,
+                                            builder: (_) => LockScreenPopup(
+                                              appName: group.name,
+                                              groupName: group.name,
+                                            ),
+                                          ).then((_) => _loadUsage());
+                                        },
+                                      ),
+                                      CupertinoActionSheetAction(
+                                        isDestructiveAction: true,
+                                        child: const Text('Remove Bonus Time'),
+                                        onPressed: () async {
+                                          Navigator.pop(ctx);
+                                          await _storage.resetBonusSeconds(group.name);
+                                          _loadUsage();
+                                        },
+                                      ),
+                                    ],
+                                    cancelButton: CupertinoActionSheetAction(
+                                      isDestructiveAction: true,
+                                      child: const Text('Cancel'),
+                                      onPressed: () => Navigator.pop(ctx),
+                                    ),
+                                  ),
+                                )
+                                : () => showCupertinoDialog(
+                                  context: context,
+                                  builder: (_) => LockScreenPopup(
+                                    appName: group.name,
+                                    groupName: group.name,
+                                  ),
+                                ).then((_) => _loadUsage()),
                             onRemoveBonus: bonusSeconds > 0
                                 ? () async {
                                     final confirm = await showCupertinoDialog<bool>(
