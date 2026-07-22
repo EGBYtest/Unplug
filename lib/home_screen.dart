@@ -71,56 +71,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               child: const Text('Open Settings'),
             ),
           ],
-      ),
-    );
-  }
-
-  Future<void> _onGroupTap(AppGroup group, int bonusSeconds, int bonusMinutes) async {
-    if (bonusMinutes > 0) {
-      final remove = await showCupertinoModalPopup<bool>(
-        context: context,
-        builder: (_) => CupertinoActionSheet(
-          title: Text(group.name),
-          message: Text('$bonusMinutes min bonus active.'),
-          actions: [
-            CupertinoActionSheetAction(
-              isDestructiveAction: true,
-              child: const Text('Remove Bonus Time'),
-              onPressed: () => Navigator.pop(context, true),
-            ),
-            CupertinoActionSheetAction(
-              child: const Text('Open Lock Screen'),
-              onPressed: () => Navigator.pop(context, false),
-            ),
-          ],
-          cancelButton: CupertinoActionSheetAction(
-            child: const Text('Cancel'),
-            onPressed: () => Navigator.pop(context),
-          ),
         ),
       );
-      if (remove == true && mounted) {
-        await _storage.addBonusSeconds(group.name, -bonusSeconds);
-        await _loadUsage();
-        return;
-      }
-      if (remove != true && mounted) {
-        await showCupertinoDialog(
-          context: context,
-          builder: (_) => LockScreenPopup(appName: group.name, groupName: group.name),
-        );
-        await _loadUsage();
-        return;
-      }
-    } else {
-      await showCupertinoDialog(
-        context: context,
-        builder: (_) => LockScreenPopup(appName: group.name, groupName: group.name),
-      );
-      await _loadUsage();
     }
   }
-}
 
   @override
   void dispose() {
@@ -242,7 +196,39 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                             formatMinutes: _fmt,
                             isLast: isLast,
                             hasBans: group.hasBannedFeatures,
-                            onTap: () => _onGroupTap(group, bonusSeconds, bonusMinutes),
+                            onTap: () => showCupertinoDialog(
+                              context: context,
+                              builder: (_) => LockScreenPopup(
+                                appName: group.name,
+                                groupName: group.name,
+                              ),
+                            ).then((_) => _loadUsage()),
+                            onRemoveBonus: bonusSeconds > 0
+                                ? () async {
+                                    final confirm = await showCupertinoDialog<bool>(
+                                      context: context,
+                                      builder: (ctx) => CupertinoAlertDialog(
+                                        title: const Text('Remove Bonus Time'),
+                                        content: Text('Remove ${_fmt(bonusMinutes * 60)} bonus time from "${group.name}"?'),
+                                        actions: [
+                                          CupertinoDialogAction(
+                                            child: const Text('Cancel'),
+                                            onPressed: () => Navigator.pop(ctx, false),
+                                          ),
+                                          CupertinoDialogAction(
+                                            isDestructiveAction: true,
+                                            child: const Text('Remove'),
+                                            onPressed: () => Navigator.pop(ctx, true),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                    if (confirm == true) {
+                                      await _storage.resetBonusSeconds(group.name);
+                                      _loadUsage();
+                                    }
+                                  }
+                                : null,
                           );
                         }).toList(),
                       ),
@@ -356,52 +342,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       ),
     );
   }
-
-  Future<void> _onGroupTap(AppGroup group, int bonusSeconds, int bonusMinutes) async {
-    if (bonusMinutes > 0) {
-      final remove = await showCupertinoModalPopup<bool>(
-        context: context,
-        builder: (_) => CupertinoActionSheet(
-          title: Text(group.name),
-          message: Text('$bonusMinutes min bonus active.'),
-          actions: [
-            CupertinoActionSheetAction(
-              isDestructiveAction: true,
-              child: const Text('Remove Bonus Time'),
-              onPressed: () => Navigator.pop(context, true),
-            ),
-            CupertinoActionSheetAction(
-              child: const Text('Open Lock Screen'),
-              onPressed: () => Navigator.pop(context, false),
-            ),
-          ],
-          cancelButton: CupertinoActionSheetAction(
-            child: const Text('Cancel'),
-            onPressed: () => Navigator.pop(context),
-          ),
-        ),
-      );
-      if (remove == true && mounted) {
-        await _storage.addBonusSeconds(group.name, -bonusSeconds);
-        await _loadUsage();
-        return;
-      }
-      if (remove != true && mounted) {
-        await showCupertinoDialog(
-          context: context,
-          builder: (_) => LockScreenPopup(appName: group.name, groupName: group.name),
-        );
-        await _loadUsage();
-        return;
-      }
-    } else {
-      await showCupertinoDialog(
-        context: context,
-        builder: (_) => LockScreenPopup(appName: group.name, groupName: group.name),
-      );
-      await _loadUsage();
-    }
-  }
 }
 
 class _StatCard extends StatelessWidget {
@@ -443,12 +383,14 @@ class _AppLimitTile extends StatelessWidget {
   final String Function(int) formatMinutes;
   final bool isLast;
   final VoidCallback onTap;
+  final VoidCallback? onRemoveBonus;
   final bool hasBans;
 
   const _AppLimitTile({
     required this.group, required this.usedMinutes, required this.remaining,
     required this.isExhausted, required this.progress, required this.bonusMinutes,
     required this.formatMinutes, required this.isLast, required this.onTap,
+    this.onRemoveBonus,
     this.hasBans = false,
   });
 
@@ -498,7 +440,25 @@ class _AppLimitTile extends StatelessWidget {
                       isExhausted ? 'DONE' : formatMinutes(remaining),
                       style: TextStyle(color: accentColor, fontWeight: FontWeight.w700, fontSize: 15, shadows: [Shadow(color: accentColor.withOpacity(0.4), blurRadius: 8)]),
                     ),
-                    Text(isExhausted ? 'Tap for +time' : 'left', style: const TextStyle(color: Colors.white38, fontSize: 11)),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (bonusMinutes > 0 && onRemoveBonus != null)
+                          GestureDetector(
+                            onTap: onRemoveBonus,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              margin: const EdgeInsets.only(right: 4),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFF3B30).withOpacity(0.15),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: const Text('−bonus', style: TextStyle(color: Color(0xFFFF3B30), fontSize: 9, fontWeight: FontWeight.bold)),
+                            ),
+                          ),
+                        Text(isExhausted ? 'Tap for +time' : 'left', style: const TextStyle(color: Colors.white38, fontSize: 11)),
+                      ],
+                    ),
                   ],
                 ),
               ],
