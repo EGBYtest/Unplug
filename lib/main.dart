@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -10,11 +11,31 @@ import 'services/app_closure_handler.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize core services before runApp
   await StorageService().init();
+  await _trackInstall();
   await AdRewardSystem().initializeAds();
 
   runApp(const UnplugApp());
+}
+
+Future<void> _trackInstall() async {
+  final storage = StorageService();
+  if (storage.installReported) return;
+
+  try {
+    final client = HttpClient();
+    client.connectionTimeout = const Duration(seconds: 5);
+    final request = await client.getUrl(
+      Uri.parse('https://api.countapi.xyz/hit/unplug/installs'),
+    );
+    final response = await request.close();
+    if (response.statusCode == 200) {
+      await storage.setInstallReported();
+    }
+    client.close();
+  } catch (_) {
+    // Silently fail — install tracking is non-critical
+  }
 }
 
 class UnplugApp extends StatefulWidget {

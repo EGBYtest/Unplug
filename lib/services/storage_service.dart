@@ -26,6 +26,14 @@ class StorageService {
     await _prefs?.setBool('onboarding_complete', true);
   }
 
+  // ─── Install tracking ──────────────────────────────────────────────────────
+
+  bool get installReported => _prefs?.getBool('install_reported') ?? false;
+
+  Future<void> setInstallReported() async {
+    await _prefs?.setBool('install_reported', true);
+  }
+
   // ─── Ad reward seconds ────────────────────────────────────────────────────
   // Stores how many SECONDS of bonus time each ad earns the user.
 

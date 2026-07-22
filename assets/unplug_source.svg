@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <!-- Background Gradient -->
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0F172A" />
+      <stop offset="100%" stop-color="#1E293B" />
+    </linearGradient>
+
+    <!-- Accent Glow Gradient (for the loop) -->
+    <linearGradient id="accentGlow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38BDF8" />
+      <stop offset="100%" stop-color="#818CF8" />
+    </linearGradient>
+
+    <!-- Shadow Filter -->
+    <filter id="dropShadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="16" stdDeviation="20" flood-color="#000000" flood-opacity="0.4" />
+    </filter>
+  </defs>
+
+  <!-- 1. Background (1024x1024 Square, Solid) -->
+  <rect width="1024" height="1024" fill="url(#bgGradient)" />
+
+  <!-- Dynamic Accent Circle (Feed Loop background element) -->
+  <circle cx="512" cy="512" r="320" fill="none" stroke="url(#accentGlow)" stroke-width="12" stroke-opacity="0.15" />
+
+  <!-- 2. Main Foreground Graphics -->
+  <g filter="url(#dropShadow)">
+    
+    <!-- Broken/Interrupted Feed Loop (Doomscroll Cycle Broken) -->
+    <!-- Top Arc -->
+    <path d="M 312 512 A 200 200 0 0 1 680 380" 
+          fill="none" 
+          stroke="url(#accentGlow)" 
+          stroke-width="48" 
+          stroke-linecap="round" />
+    
+    <!-- Bottom Arc -->
+    <path d="M 712 512 A 200 200 0 0 1 344 644" 
+          fill="none" 
+          stroke="url(#accentGlow)" 
+          stroke-width="48" 
+          stroke-linecap="round" />
+
+    <!-- Unplugged Power Cable & Plug Body (SOLID WHITE) -->
+    <g transform="translate(0, 0)">
+      
+      <!-- Power Prongs -->
+      <rect x="440" y="380" width="32" height="90" rx="16" fill="#F8FAFC" />
+      <rect x="552" y="380" width="32" height="90" rx="16" fill="#F8FAFC" />
+
+      <!-- Main Plug Body -->
+      <path d="M 400 470 
+               L 624 470 
+               C 640 470, 652 482, 652 498 
+               L 652 560 
+               C 652 610, 600 640, 512 640 
+               C 424 640, 372 610, 372 560 
+               L 372 498 
+               C 372 482, 384 470, 400 470 Z" 
+            fill="#F8FAFC" />
+
+      <!-- Cord dropping down out of the loop -->
+      <path d="M 512 640 
+               C 512 720, 480 780, 512 860" 
+            fill="none" 
+            stroke="#F8FAFC" 
+            stroke-width="36" 
+            stroke-linecap="round" />
+    </g>
+    
+  </g>
+</svg>
