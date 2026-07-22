@@ -44,3 +44,11 @@ app.*.map.json
 
 # App logs
 log.txt
+
+# Ephemeral generated files
+**/ephemeral/
+**/flutter_export_environment.sh
+**/Generated.xcconfig
+**/GeneratedPluginRegistrant.h
+**/GeneratedPluginRegistrant.m
+**/GeneratedPluginRegistrant.swift
