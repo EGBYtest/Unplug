@@ -26,7 +26,7 @@ Future<void> _trackInstall() async {
     final client = HttpClient();
     client.connectionTimeout = const Duration(seconds: 5);
     final request = await client.getUrl(
-      Uri.parse('https://api.countapi.xyz/hit/unplug/installs'),
+      Uri.parse('https://api.counterapi.dev/v1/unplug/installs/up'),
     );
     final response = await request.close();
     if (response.statusCode == 200) {
