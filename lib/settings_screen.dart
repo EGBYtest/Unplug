@@ -38,7 +38,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void _unlockSettings() => setState(() => _isUnlocked = true);
 
   void _watchAdToUnlock() {
-    AdRewardSystem().showRewardedAd(_unlockSettings, () {});
+    AdRewardSystem().showRewardedAd(context, _unlockSettings, () {});
   }
 
   void _showTypeChallenge() {

@@ -81,6 +81,7 @@ class _LockScreenPopupState extends State<LockScreenPopup> {
   void _watchAd() {
     setState(() => _adLoading = true);
     _ads.showRewardedAd(
+      context,
       () async {
         if (mounted) {
           setState(() => _adLoading = false);
