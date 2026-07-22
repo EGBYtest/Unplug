@@ -1,140 +1,183 @@
 # Unplug
 
-> **v1.2 (Beta)** — Take control of your digital habits.
+<p align="center">
+  <img src="assets/ic_launcher.png" alt="Unplug" width="120">
+</p>
 
-Android screen time management app. Set daily time limits on app groups. Once exhausted, earn extra time by watching an ad or completing a typing challenge. Also block specific in-app features like YouTube Shorts, Instagram Reels, and Snapchat Spotlight while keeping the rest of the app usable.
+<p align="center">
+  <strong>Take back your time. One mindful decision at a time.</strong>
+</p>
 
-> **Privacy-first, open source.** All data stored locally. Nothing leaves your device.
-
----
-
-## Features
-
-### App Group Limits
-- Group apps into categories (Social Media, Games, Entertainment...)
-- Set daily time limit per group (30 min, 1 hour, or 0 = block immediately)
-- Saved locally, reset daily
-
-### In-App Tab Blockers (new in v1.2)
-- Block specific tabs/features within apps without blocking the entire app
-- Presets: Snapchat Spotlight, YouTube Shorts, Instagram Reels, Facebook Reels, TikTok Feed, Reddit Popular
-- Detects via activity class names and view hierarchy content keywords
-- Presses BACK to exit the blocked tab — app stays open for other features
-- Smart detection skips navigation bars, buttons, and edge-positioned UI elements to avoid false positives
-
-### Real-Time Enforcement
-- **Accessibility Service** detects foreground app switches
-- Exceed limit → non-dismissible lock screen popup
-- Works in split-screen and PiP mode
-
-### Bypass Mechanisms
-| Method | Bonus Time | Notes |
-|--------|-----------|-------|
-| Watch rewarded ad | +1 min (configurable) | Ad unit IDs in `ad_reward_system.dart` |
-| Type 50-word challenge | +1 min | Copy-paste blocked; forces intentionality |
-
-### Locked Settings
-- Changing limits requires ad or typing challenge
-- Toggle in Settings → SECURITY → Lock Settings
-- Prevents impulse tweaks
-
-### Privacy Dashboard
-- Circular progress ring — total screen time vs. limit
-- Per-group progress bars with color coding
-  - 🟢 Green = safe
-  - 🟡 Yellow = nearing limit
-  - 🔴 Red = exhausted
-
-### Usage Statistics
-- **Groups** — number of configured app groups
-- **Exhausted** — groups that hit limit today
-- **Active** — groups still within limit
+<p align="center">
+  <a href="https://github.com/EGBYtest/Unplug/releases/latest">
+    <img src="https://img.shields.io/badge/Download-APK-brightgreen?style=for-the-badge&logo=android" alt="Download APK">
+  </a>
+</p>
 
 ---
 
-## Architecture
+## What is Unplug?
+
+Unplug helps you reduce mindless scrolling by setting **daily time limits** on app groups and **blocking addictive tabs** like YouTube Shorts, Instagram Reels, and Snapchat Spotlight — without killing the entire app.
+
+When your time runs out, you face a choice: watch a full ad or type a 50-word mindfulness message to earn extra time. No easy skips. No "just 5 more minutes" loopholes.
+
+> **100% local. No accounts. No servers. Your data never leaves your device.**
+
+---
+
+## Why Unplug?
+
+### Set Boundaries That Stick
+- Create app groups (Social Media, Games, Entertainment...)
+- Set a daily limit per group — 30 minutes, 1 hour, or **0 = block immediately**
+- Once exhausted, a full-screen lock appears. No way around it.
+
+### Block Addictive Tabs, Not Apps
+| App | Blocked Tab | Rest of App |
+|-----|-------------|-------------|
+| YouTube | Shorts | Subscriptions, search, normal videos |
+| Instagram | Reels | Feed, DMs, stories |
+| Snapchat | Spotlight | Camera, chat, map |
+| Facebook | Reels & Watch | Feed, groups, messenger |
+| TikTok | For You / Following feed | Profile, inbox |
+| Reddit | Popular / Watch | Subreddits, comments |
+
+Smart detection exits only the blocked tab. The app stays open.
+
+### Earn More Time — Mindfully
+| Method | Bonus | The Catch |
+|--------|-------|------------|
+| Watch a rewarded ad | +1 min (configurable) | Must watch 30 seconds minimum |
+| Type a 50-word challenge | +1 min | Exact match required. No copy-paste. |
+
+Both are intentionally inconvenient — that's the point. If you really need more time, you'll do it. If not, you'll put the phone down.
+
+### Settings That Can't Be Undone on Impulse
+- Editing limits, groups, or tab blockers requires completing the same ad-or-type challenge
+- Toggle Settings Lock on/off in Settings → Security
+- Prevents the "I'll just add 5 more minutes..." spiral
+
+### See Your Progress
+- **Circular ring chart** — total screen time vs. your limit, at a glance
+- **Weekly average comparison** — are you trending up or down?
+- **Per-group progress bars** — green (safe), yellow (near limit), red (exhausted)
+- **Bonus time tracking** — see how much extra time you've earned
+
+---
+
+## Screenshots
+
+<p align="center">
+  <em>Dashboard · Lock Screen · Settings · Tab Blockers · Onboarding</em>
+</p>
+
+---
+
+## Permissions Required
+
+| Permission | Why |
+|-----------|-----|
+| **Usage Access** | Read how long you've used each app today |
+| **Accessibility Service** | Detect when time-limited apps open and enforce limits |
+
+Both are granted manually in Android Settings. Unplug cannot modify these — only you can.
+
+**OxygenOS / ColorOS users:**
+Settings → Accessibility → Downloaded apps → Unplug
+
+---
+
+## Download
+
+**[Download the latest APK](https://github.com/EGBYtest/Unplug/releases/latest)** from GitHub Releases.
+
+Requirements:
+- Android 11+ (API 30)
+- ~24 MB download
+
+> **Note:** Not available on Google Play. Side-loading required — enable "Install unknown apps" for your browser or file manager.
+
+---
+
+## How It Works
+
+Unplug runs an **Android Accessibility Service** that watches which app is in the foreground in real-time. When a time-limited app opens:
+
+1. **Check time** — reads today's usage from Android's built-in UsageStats
+2. **Check tab** — scans the view hierarchy for banned in-app features (Shorts, Reels, Spotlight...)
+3. **Enforce** — if time is up or tab is blocked, presses BACK to exit the feature. If time limit hit, force-closes the app.
+4. **Show lock screen** — full-screen popup with ad and typing challenge options
+
+Everything runs on-device. SharedPreferences stores your groups, limits, and bonus time. The native Kotlin service reads these directly — no network calls during enforcement.
+
+---
+
+## For Developers
+
+### Build
+
+```bash
+git clone https://github.com/EGBYtest/Unplug.git
+cd Unplug
+flutter pub get
+flutter build apk --release
+```
+
+### Tech Stack
+
+| Layer | Tech |
+|-------|------|
+| UI Framework | Flutter (Cupertino widgets, dark theme) |
+| Frontend Language | Dart |
+| Native Enforcement | Kotlin (AccessibilityService) |
+| Ads | Google Mobile Ads SDK (rewarded video) |
+| Storage | SharedPreferences |
+| Usage Tracking | `usage_stats` package |
+| Bridge | MethodChannel (Flutter ↔ Android) |
+
+### Architecture
 
 ```
 Unplug/
 ├── lib/
-│   ├── main.dart                    # Entry point, CupertinoApp, method channel
-│   ├── home_screen.dart             # Dashboard with ring + stats + app tiles
-│   ├── onboarding_screen.dart       # Permission setup flow
-│   ├── settings_screen.dart         # Locked settings (ad/type to unlock)
-│   ├── lock_screen_popup.dart       # Non-dismissible lock dialog + bypass
+│   ├── main.dart                       # Entry point, CupertinoApp, method channel
+│   ├── home_screen.dart                # Dashboard with ring chart + stats
+│   ├── onboarding_screen.dart          # Permission setup flow
+│   ├── settings_screen.dart            # Locked settings (ad/type to unlock)
+│   ├── lock_screen_popup.dart          # Non-dismissible lock dialog + bypass
 │   ├── screens/
-│   │   └── app_picker_screen.dart   # Searchable installed apps list
+│   │   └── app_picker_screen.dart      # Searchable installed apps list
 │   ├── models/
-│   │   └── app_group.dart           # Group model (name, packages, limit)
+│   │   └── app_group.dart              # AppGroup + BannedFeature models
 │   ├── services/
-│   │   ├── storage_service.dart     # SharedPreferences persistence
-│   │   ├── usage_tracker.dart       # Usage stats polling
-│   │   ├── app_closure_handler.dart # MethodChannel bridge to native
-│   │   ├── ad_reward_system.dart    # Google Mobile Ads integration
-│   │   └── message_verification.dart# Typing challenge logic
+│   │   ├── storage_service.dart        # SharedPreferences persistence
+│   │   ├── usage_tracker.dart          # Usage stats polling
+│   │   ├── app_closure_handler.dart    # MethodChannel bridge
+│   │   ├── ad_reward_system.dart       # Rewarded ad integration
+│   │   └── message_verification.dart   # Typing challenge logic
 │   └── utils/
-│       └── no_paste_formatter.dart  # Clipboard paste blocker
-├── android/
-│   └── app/src/main/kotlin/com/example/app_idea/
-│       ├── MainActivity.kt          # FlutterActivity + MethodChannel
-│       ├── AppClosureHandler.kt     # Force-close / home redirect
-│       └── UsageAccessibilityService.kt # Foreground detection + enforcement
-└── pubspec.yaml
+│       └── no_paste_formatter.dart     # Clipboard paste blocker
+└── android/
+    └── app/src/main/kotlin/com/example/app_idea/
+        ├── MainActivity.kt             # FlutterActivity + MethodChannel
+        ├── AppClosureHandler.kt        # Force-close / home redirect
+        └── UsageAccessibilityService.kt # Foreground watch + enforcement + tab blocking
 ```
-
-### Key Design Decisions
-
-| Decision | Rationale |
-|----------|-----------|
-| **Local-only storage** | SharedPreferences — no server, no network calls |
-| **Kotlin Accessibility Service** | Real-time foreground app detection + in-app tab blocking via view hierarchy scanning |
-| **Dart-side usage stats** | `usage_stats` package for dashboard; native re-reads prefs for enforcement |
-| **MethodChannel bridge** | `app_closure` channel for Flutter ↔ Android |
-| **Cupertino widgets** | iOS-style dark theme, premium feel |
-| **Typing challenge** | Forces mindful decision to bypass limits |
-| **No re-check on foreground** | Permissions checked once during onboarding |
-| **In-app tab detection** | Scans accessibility node tree for activity class name patterns and view hierarchy content keywords; skips nav bars, clickable elements, and edge-positioned UI to avoid false positives |
-
----
-
-## Permissions
-
-| Permission | Purpose |
-|-----------|---------|
-| `PACKAGE_USAGE_STATS` | Read app usage for screen time tracking |
-| `BIND_ACCESSIBILITY_SERVICE` | Detect blocked app opens & enforce limits |
-
-Both granted manually in system settings. On **OxygenOS/ColorOS**, navigate to:
-Settings → Accessibility → Downloaded apps → Unplug.
-
----
-
-## Build & Run
-
-```bash
-git clone https://github.com/EGBYtest/APp-idea.git
-cd APp-idea
-flutter pub get
-flutter run
-```
-
-> **Note:** Uses Google Mobile Ads **test** unit IDs. Replace before release.
 
 ### Requirements
 - Flutter SDK ≥ 3.0.0
 - Dart SDK ≥ 3.0.0
-- Android API 30+ recommended
+- Android API 30+
 
 ---
 
-## Tech Stack
+## Privacy
 
-- **Framework:** Flutter (Cupertino widgets)
-- **Language:** Dart + Kotlin (native)
-- **Ads:** Google Mobile Ads SDK (rewarded video)
-- **Storage:** SharedPreferences
-- **Usage Stats:** `usage_stats` package
-- **Build:** Flutter CLI / Gradle
+- No analytics. No tracking. No accounts.
+- All data (groups, limits, usage history) stored locally in SharedPreferences
+- The install counter (counterapi.dev) fires **once** on first launch with no identifying information
+- Source code is open — verify for yourself
 
 ---
 
