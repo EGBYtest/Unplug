@@ -51,7 +51,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         builder: (ctx) => CupertinoAlertDialog(
           title: const Text('Permissions Required'),
           content: Text(
-            'ScreenTimeLock needs the following permissions to function:\n\n'
+            'Unplug needs the following permissions to function:\n\n'
             '${missing.map((p) => '• $p').join('\n')}\n\n'
             'Tap "Open Settings" to enable them.',
           ),

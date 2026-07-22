@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:app_idea/models/app_group.dart';
+import 'package:unplug/models/app_group.dart';
 
 void main() {
   group('BannedFeature & AppGroup tests', () {

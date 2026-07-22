@@ -1,4 +1,4 @@
-# ScreenTimeLock
+# Unplug
 
 > **v1.2 (Beta)** — Take control of your digital habits.
 
@@ -55,7 +55,7 @@ Android screen time management app. Set daily time limits on app groups. Once ex
 ## Architecture
 
 ```
-ScreenTimeLock/
+Unplug/
 ├── lib/
 │   ├── main.dart                    # Entry point, CupertinoApp, method channel
 │   ├── home_screen.dart             # Dashboard with ring + stats + app tiles
@@ -105,7 +105,7 @@ ScreenTimeLock/
 | `BIND_ACCESSIBILITY_SERVICE` | Detect blocked app opens & enforce limits |
 
 Both granted manually in system settings. On **OxygenOS/ColorOS**, navigate to:
-Settings → Accessibility → Downloaded apps → ScreenTimeLock.
+Settings → Accessibility → Downloaded apps → Unplug.
 
 ---
 

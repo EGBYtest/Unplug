@@ -14,17 +14,17 @@ void main() async {
   await StorageService().init();
   await AdRewardSystem().initializeAds();
 
-  runApp(const ScreenTimeLockApp());
+  runApp(const UnplugApp());
 }
 
-class ScreenTimeLockApp extends StatefulWidget {
-  const ScreenTimeLockApp({Key? key}) : super(key: key);
+class UnplugApp extends StatefulWidget {
+  const UnplugApp({Key? key}) : super(key: key);
 
   @override
-  State<ScreenTimeLockApp> createState() => _ScreenTimeLockAppState();
+  State<UnplugApp> createState() => _UnplugAppState();
 }
 
-class _ScreenTimeLockAppState extends State<ScreenTimeLockApp> {
+class _UnplugAppState extends State<UnplugApp> {
   static const MethodChannel _channel = MethodChannel('app_closure');
   final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
@@ -57,7 +57,7 @@ class _ScreenTimeLockAppState extends State<ScreenTimeLockApp> {
 
     return CupertinoApp(
       navigatorKey: navigatorKey,
-      title: 'ScreenTimeLock',
+      title: 'Unplug',
       theme: const CupertinoThemeData(
         brightness: Brightness.dark,
         primaryColor: CupertinoColors.activeBlue,

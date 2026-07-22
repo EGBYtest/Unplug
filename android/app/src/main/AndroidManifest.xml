@@ -16,7 +16,7 @@
     <uses-permission android:name="android.permission.KILL_BACKGROUND_PROCESSES"/>
 
     <application
-        android:label="ScreenTimeLock"
+        android:label="Unplug"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
 

@@ -1,6 +1,6 @@
 ---
 name: Bug Report
-about: Report a bug to help improve ScreenTimeLock
+about: Report a bug to help improve Unplug
 title: ''
 labels: bug
 assignees: ''

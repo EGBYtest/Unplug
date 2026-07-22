@@ -93,7 +93,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> with WidgetsBinding
                       child: const Icon(CupertinoIcons.lock_shield_fill, color: Colors.white, size: 48),
                     ),
                     const SizedBox(height: 20),
-                    const Text('ScreenTimeLock', style: TextStyle(fontSize: 30, fontWeight: FontWeight.w800, color: Colors.white, letterSpacing: -1)),
+                    const Text('Unplug', style: TextStyle(fontSize: 30, fontWeight: FontWeight.w800, color: Colors.white, letterSpacing: -1)),
                     const SizedBox(height: 8),
                     const Text('Take control of your screen time.', style: TextStyle(fontSize: 16, color: Colors.white60)),
                   ],
@@ -136,7 +136,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> with WidgetsBinding
               const Text('Required Permissions', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Colors.white)),
               const SizedBox(height: 6),
               const Text(
-                'ScreenTimeLock needs these permissions to detect and enforce app limits. Tap each card to open the exact settings page.',
+                'Unplug needs these permissions to detect and enforce app limits. Tap each card to open the exact settings page.',
                 style: TextStyle(color: Colors.white54, fontSize: 14, height: 1.5),
               ),
               const SizedBox(height: 20),
@@ -144,7 +144,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> with WidgetsBinding
               _PermissionCard(
                 icon: CupertinoIcons.chart_bar_fill,
                 title: 'Usage Access',
-                description: 'Lets ScreenTimeLock see how long you\'ve used each app today.',
+                description: 'Lets Unplug see how long you\'ve used each app today.',
                 isGranted: _hasUsageAccess,
                 onTap: () async {
                   await AppClosureHandler().openUsageAccessSettings();
@@ -155,7 +155,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> with WidgetsBinding
               _PermissionCard(
                 icon: CupertinoIcons.eye_fill,
                 title: 'Accessibility Service',
-                description: 'Detects when a time-limited app is opened and redirects you to the lock screen.\n\nOn some devices (OxygenOS/ColorOS), tap "Downloaded apps" then select ScreenTimeLock.',
+                description: 'Detects when a time-limited app is opened and redirects you to the lock screen.\n\nOn some devices (OxygenOS/ColorOS), tap "Downloaded apps" then select Unplug.',
                 isGranted: _hasAccessibility,
                 onTap: () async {
                   await AppClosureHandler().openAccessibilitySettings();
