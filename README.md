@@ -2,20 +2,9 @@
 
 > **v1.1 (Beta)** — Take control of your digital habits.
 
-An Android screen time management app that helps you limit mindless app usage. Set daily time limits on app groups. Once exhausted, earn extra time by watching an ad or completing a typing challenge.
+Android screen time management app. Set daily time limits on app groups. Once exhausted, earn extra time by watching an ad or completing a typing challenge.
 
 > **Privacy-first, open source.** All data stored locally. Nothing leaves your device.
-
----
-
-## Screenshots
-
-<p float="left">
-  <img src="screenshots/home_dashboard.png" width="200" alt="Home Dashboard" />
-  <img src="screenshots/app_picker.png" width="200" alt="App Picker" />
-  <img src="screenshots/lock_screen.png" width="200" alt="Lock Screen" />
-  <img src="screenshots/settings.png" width="200" alt="Settings" />
-</p>
 
 ---
 
