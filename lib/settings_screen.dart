@@ -367,6 +367,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       trailing: _isUnlocked ? const CupertinoListTileChevron() : null,
                       onTap: _isUnlocked ? () => _editAdRatio() : null,
                     ),
+                    CupertinoListTile(
+                      backgroundColor: const Color(0xFF1C1C1E),
+                      leading: const Icon(CupertinoIcons.clock, color: Color(0xFF30D158), size: 22),
+                      title: const Text('Bypasses grant extra time', style: TextStyle(color: Colors.white)),
+                      additionalInfo: Text(
+                        _storage.adBonusEnabled ? 'ON' : 'OFF',
+                        style: TextStyle(
+                          color: _storage.adBonusEnabled ? const Color(0xFF30D158) : Colors.white38,
+                          fontSize: 12,
+                        ),
+                      ),
+                      trailing: CupertinoSwitch(
+                        value: _storage.adBonusEnabled,
+                        onChanged: (val) async {
+                          await _storage.setAdBonusEnabled(val);
+                          setState(() {});
+                        },
+                      ),
+                    ),
                   ],
                 ),
 
