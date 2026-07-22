@@ -37,7 +37,12 @@ class _AppPickerScreenState extends State<AppPickerScreen> {
     try {
       final List<dynamic> result = await _channel.invokeMethod('getInstalledApps');
       final apps = result.map((e) => Map<String, String>.from(e as Map)).toList();
-      apps.sort((a, b) => (a['name'] ?? '').compareTo(b['name'] ?? ''));
+      apps.sort((a, b) {
+        final aSel = _selected.contains(a['packageName']) ? 0 : 1;
+        final bSel = _selected.contains(b['packageName']) ? 0 : 1;
+        if (aSel != bSel) return aSel.compareTo(bSel);
+        return (a['name'] ?? '').compareTo(b['name'] ?? '');
+      });
 
       final user = apps.where((a) => a['isSystem'] != 'true').toList();
       final system = apps.where((a) => a['isSystem'] == 'true').toList();
@@ -83,6 +88,17 @@ class _AppPickerScreenState extends State<AppPickerScreen> {
       } else {
         _selected.add(pkg);
       }
+      _sortBySelection(_filteredUser);
+      _sortBySelection(_filteredSystem);
+    });
+  }
+
+  void _sortBySelection(List<Map<String, String>> list) {
+    list.sort((a, b) {
+      final aSel = _selected.contains(a['packageName']) ? 0 : 1;
+      final bSel = _selected.contains(b['packageName']) ? 0 : 1;
+      if (aSel != bSel) return aSel.compareTo(bSel);
+      return (a['name'] ?? '').compareTo(b['name'] ?? '');
     });
   }
 

@@ -480,16 +480,108 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _showGroupOptions(int index) {
+    final group = _groups[index];
     showCupertinoModalPopup(
       context: context,
       builder: (_) => CupertinoActionSheet(
-        title: Text(_groups[index].name),
+        title: Text(group.name),
         actions: [
           CupertinoActionSheetAction(child: const Text('Edit Time Limit'), onPressed: () { Navigator.pop(context); _editLimit(index); }),
           CupertinoActionSheetAction(child: const Text('Edit Apps in Group'), onPressed: () { Navigator.pop(context); _editGroupApps(index); }),
+          CupertinoActionSheetAction(
+            child: Text(group.hasBannedFeatures
+                ? 'Banned Features (${group.bannedFeatures.length})'
+                : 'Banned Features'),
+            onPressed: () { Navigator.pop(context); _editBannedFeatures(index); },
+          ),
           CupertinoActionSheetAction(isDestructiveAction: true, child: const Text('Delete Group'), onPressed: () { Navigator.pop(context); _deleteGroup(index); }),
         ],
         cancelButton: CupertinoActionSheetAction(isDestructiveAction: true, child: const Text('Cancel'), onPressed: () => Navigator.pop(context)),
+      ),
+    );
+  }
+
+  void _editBannedFeatures(int index) {
+    final group = _groups[index];
+    final controller = TextEditingController();
+
+    showCupertinoDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setInner) {
+          final features = List<String>.from(_groups[index].bannedFeatures);
+          return CupertinoAlertDialog(
+            title: const Text('Banned Features'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('Features permanently blocked in this group. No ad bypass — typing challenge only.'),
+                const SizedBox(height: 12),
+                if (features.isNotEmpty)
+                  Container(
+                    constraints: const BoxConstraints(maxHeight: 160),
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: features.length,
+                      itemBuilder: (_, i) => Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        child: Row(
+                          children: [
+                            Expanded(child: Text(features[i], style: const TextStyle(color: Colors.white, fontSize: 13))),
+                            GestureDetector(
+                              onTap: () {
+                                features.removeAt(i);
+                                _groups[index] = AppGroup(
+                                  name: group.name,
+                                  packageNames: group.packageNames,
+                                  timeLimitMinutes: group.timeLimitMinutes,
+                                  bannedFeatures: features,
+                                );
+                                setInner(() {});
+                              },
+                              child: const Icon(CupertinoIcons.xmark_circle_fill, color: Color(0xFFFF3B30), size: 18),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 8),
+                CupertinoTextField(
+                  controller: controller,
+                  placeholder: 'e.g. Snapchat Spotlight',
+                  placeholderStyle: const TextStyle(color: CupertinoColors.systemGrey, fontSize: 13),
+                  style: const TextStyle(color: CupertinoColors.white, fontSize: 13),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1C1C1E),
+                    border: Border.all(color: const Color(0xFF3A3A3C)),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  padding: const EdgeInsets.all(10),
+                ),
+              ],
+            ),
+            actions: [
+              CupertinoDialogAction(
+                isDestructiveAction: true,
+                child: const Text('Done'),
+                onPressed: () {
+                  final text = controller.text.trim();
+                  if (text.isNotEmpty && !features.contains(text)) {
+                    features.add(text);
+                    _groups[index] = AppGroup(
+                      name: group.name,
+                      packageNames: group.packageNames,
+                      timeLimitMinutes: group.timeLimitMinutes,
+                      bannedFeatures: features,
+                    );
+                  }
+                  Navigator.pop(ctx);
+                },
+              ),
+            ],
+          );
+        },
       ),
     );
   }

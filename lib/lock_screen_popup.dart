@@ -10,8 +10,16 @@ import 'utils/no_paste_formatter.dart';
 class LockScreenPopup extends StatefulWidget {
   final String appName;
   final String? groupName;
+  final List<String> bannedFeatures;
 
-  const LockScreenPopup({Key? key, required this.appName, this.groupName}) : super(key: key);
+  const LockScreenPopup({
+    Key? key,
+    required this.appName,
+    this.groupName,
+    this.bannedFeatures = const [],
+  }) : super(key: key);
+
+  bool get hasBans => bannedFeatures.isNotEmpty;
 
   @override
   State<LockScreenPopup> createState() => _LockScreenPopupState();
@@ -131,13 +139,15 @@ class _LockScreenPopupState extends State<LockScreenPopup> {
                     child: const Icon(CupertinoIcons.lock_fill, size: 38, color: Color(0xFFFF3B30)),
                   ),
                   const SizedBox(height: 16),
-                  const Text(
-                    'Time Exhausted',
-                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 22, color: Colors.white),
+                  Text(
+                    widget.hasBans ? 'Banned Feature Detected' : 'Time Exhausted',
+                    style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 22, color: Colors.white),
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Your screen time for "${widget.appName}" is up.',
+                    widget.hasBans
+                        ? '${widget.appName} has features permanently banned.'
+                        : 'Your screen time for "${widget.appName}" is up.',
                     textAlign: TextAlign.center,
                     style: const TextStyle(color: Colors.white70, fontSize: 15),
                   ),
@@ -165,42 +175,75 @@ class _LockScreenPopupState extends State<LockScreenPopup> {
                   else if (!_showTypeChallenge)
                     Column(
                       children: <Widget>[
-                        Text(
-                          '+${_fmtSeconds(_storage.adRewardSeconds)} per action',
-                          style: const TextStyle(color: Colors.white38, fontSize: 13),
-                        ),
-                        const SizedBox(height: 16),
-                        SizedBox(
-                          width: double.infinity,
-                          child: CupertinoButton(
-                            color: const Color(0xFF0A84FF),
-                            borderRadius: BorderRadius.circular(12),
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            onPressed: _watchAd,
-                            child: const Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: <Widget>[
-                                Icon(CupertinoIcons.play_circle_fill, color: Colors.white, size: 18),
-                                SizedBox(width: 8),
-                                Text('Watch Ad  (+time)', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                        if (widget.hasBans) ...[
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFF3B30).withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: const Color(0xFFFF3B30).withOpacity(0.3)),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('Banned features:', style: TextStyle(color: Color(0xFFFF3B30), fontWeight: FontWeight.bold, fontSize: 13)),
+                                const SizedBox(height: 6),
+                                ...widget.bannedFeatures.map((f) => Padding(
+                                  padding: const EdgeInsets.only(bottom: 2),
+                                  child: Row(
+                                    children: [
+                                      const Icon(CupertinoIcons.xmark, color: Color(0xFFFF3B30), size: 12),
+                                      const SizedBox(width: 6),
+                                      Expanded(child: Text(f, style: const TextStyle(color: Colors.white70, fontSize: 13))),
+                                    ],
+                                  ),
+                                )),
                               ],
                             ),
                           ),
-                        ),
-                        const SizedBox(height: 10),
+                          const SizedBox(height: 12),
+                        ],
+                        if (!widget.hasBans) ...[
+                          Text(
+                            '+${_fmtSeconds(_storage.adRewardSeconds)} per action',
+                            style: const TextStyle(color: Colors.white38, fontSize: 13),
+                          ),
+                          const SizedBox(height: 16),
+                          SizedBox(
+                            width: double.infinity,
+                            child: CupertinoButton(
+                              color: const Color(0xFF0A84FF),
+                              borderRadius: BorderRadius.circular(12),
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              onPressed: _watchAd,
+                              child: const Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: <Widget>[
+                                  Icon(CupertinoIcons.play_circle_fill, color: Colors.white, size: 18),
+                                  SizedBox(width: 8),
+                                  Text('Watch Ad  (+time)', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                        ],
                         SizedBox(
                           width: double.infinity,
                           child: CupertinoButton(
-                            color: const Color(0xFF2C2C2E),
+                            color: widget.hasBans ? const Color(0xFFFF3B30) : const Color(0xFF2C2C2E),
                             borderRadius: BorderRadius.circular(12),
                             padding: const EdgeInsets.symmetric(vertical: 14),
                             onPressed: () => setState(() => _showTypeChallenge = true),
-                            child: const Row(
+                            child: Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: <Widget>[
-                                Icon(CupertinoIcons.pencil, color: Color(0xFF0A84FF), size: 18),
-                                SizedBox(width: 8),
-                                Text('Type 100 words  (+time)', style: TextStyle(color: Color(0xFF0A84FF), fontWeight: FontWeight.bold)),
+                                const Icon(CupertinoIcons.pencil, size: 18),
+                                const SizedBox(width: 8),
+                                Text(
+                                  widget.hasBans ? 'Type to bypass ban  (+time)' : 'Type 100 words  (+time)',
+                                  style: const TextStyle(fontWeight: FontWeight.bold),
+                                ),
                               ],
                             ),
                           ),

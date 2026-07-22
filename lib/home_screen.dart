@@ -195,9 +195,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                             bonusMinutes: bonusMinutes,
                             formatMinutes: _fmt,
                             isLast: isLast,
+                            hasBans: group.hasBannedFeatures,
                             onTap: () => showCupertinoDialog(
                               context: context,
-                              builder: (_) => LockScreenPopup(appName: group.name, groupName: group.name),
+                              builder: (_) => LockScreenPopup(
+                                appName: group.name,
+                                groupName: group.name,
+                                bannedFeatures: group.bannedFeatures,
+                              ),
                             ).then((_) => _loadUsage()),
                           );
                         }).toList(),
@@ -353,11 +358,13 @@ class _AppLimitTile extends StatelessWidget {
   final String Function(int) formatMinutes;
   final bool isLast;
   final VoidCallback onTap;
+  final bool hasBans;
 
   const _AppLimitTile({
     required this.group, required this.usedMinutes, required this.remaining,
     required this.isExhausted, required this.progress, required this.bonusMinutes,
     required this.formatMinutes, required this.isLast, required this.onTap,
+    this.hasBans = false,
   });
 
   @override
@@ -393,7 +400,7 @@ class _AppLimitTile extends StatelessWidget {
                     children: [
                       Text(group.name, style: TextStyle(color: isExhausted ? Colors.white38 : Colors.white, fontWeight: FontWeight.w600, fontSize: 15, decoration: isExhausted ? TextDecoration.lineThrough : null)),
                       Text(
-                        '${group.packageNames.length} apps  •  ${formatMinutes(group.timeLimitMinutes)} limit${bonusMinutes > 0 ? "  +${formatMinutes(bonusMinutes)} bonus" : ""}',
+                        '${group.packageNames.length} apps  •  ${formatMinutes(group.timeLimitMinutes)} limit${bonusMinutes > 0 ? "  +${formatMinutes(bonusMinutes)} bonus" : ""}${hasBans ? "  •  🔴 ${group.bannedFeatures.length} banned" : ""}',
                         style: const TextStyle(color: Colors.white38, fontSize: 12),
                       ),
                     ],
