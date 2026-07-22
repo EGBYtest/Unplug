@@ -12,6 +12,7 @@ class AdRewardSystem {
   bool _isAdReady = false;
   bool _rewardEarned = false;
   DateTime? _watchStartTime;
+  int _accumulatedWatchSeconds = 0;
   static const _minWatchSeconds = 30;
 
   final String _adUnitId = 'ca-app-pub-3940256099942544/5224354917';
@@ -51,8 +52,10 @@ class AdRewardSystem {
   void showRewardedAd(
     BuildContext context,
     VoidCallback onRewardGranted,
-    VoidCallback onAdFailed,
-  ) {
+    VoidCallback onAdFailed, {
+    int accumulatedSeconds = 0,
+  }) {
+    _accumulatedWatchSeconds = accumulatedSeconds;
     if (_isAdReady && _rewardedAd != null) {
       _presentAd(context, onRewardGranted, onAdFailed);
       return;
@@ -86,32 +89,36 @@ class AdRewardSystem {
     _rewardedAd!.fullScreenContentCallback = FullScreenContentCallback(
       onAdDismissedFullScreenContent: (ad) {
         final earned = _rewardEarned;
-        final elapsed = DateTime.now().difference(_watchStartTime!).inSeconds;
+        final sessionElapsed = DateTime.now().difference(_watchStartTime!).inSeconds;
+        final totalElapsed = _accumulatedWatchSeconds + sessionElapsed;
         ad.dispose();
 
-        if (earned && elapsed >= _minWatchSeconds) {
+        if (earned && totalElapsed >= _minWatchSeconds) {
           _loadAd();
+          _accumulatedWatchSeconds = 0;
           onRewardGranted();
-        } else if (earned && elapsed < _minWatchSeconds) {
-          // Demo ad too short — force reload until minimum time met
+        } else if (earned && totalElapsed < _minWatchSeconds) {
+          // Demo ad too short — accumulate time and prompt replay
+          final newAccumulated = totalElapsed;
           _loadAd();
           showCupertinoDialog(
             context: context,
             builder: (_) => CupertinoAlertDialog(
               title: const Text('Keep Watching'),
-              content: Text('Please watch for at least $_minWatchSeconds seconds.\n\n${_minWatchSeconds - elapsed}s remaining.'),
+              content: Text('Please watch for at least $_minWatchSeconds seconds.\n\nWatched: ${newAccumulated}s / ${_minWatchSeconds}s'),
               actions: [
                 CupertinoDialogAction(
                   child: const Text('Watch Again'),
                   onPressed: () {
                     Navigator.pop(context);
-                    showRewardedAd(context, onRewardGranted, onAdFailed);
+                    showRewardedAd(context, onRewardGranted, onAdFailed, accumulatedSeconds: newAccumulated);
                   },
                 ),
                 CupertinoDialogAction(
                   isDestructiveAction: true,
                   child: const Text('Cancel'),
                   onPressed: () {
+                    _accumulatedWatchSeconds = 0;
                     _loadAd();
                     Navigator.pop(context);
                   },
@@ -121,6 +128,7 @@ class AdRewardSystem {
           );
         } else {
           _loadAd();
+          _accumulatedWatchSeconds = 0;
           onAdFailed();
         }
       },
@@ -128,6 +136,7 @@ class AdRewardSystem {
         debugPrint('AdRewardSystem: Failed to show — $error');
         ad.dispose();
         _loadAd();
+        _accumulatedWatchSeconds = 0;
         onAdFailed();
       },
     );
