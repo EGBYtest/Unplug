@@ -1,363 +1,209 @@
 package com.example.app_idea
 
 import android.accessibilityservice.AccessibilityService
-import android.accessibilityservice.AccessibilityServiceInfo
 import android.view.accessibility.AccessibilityEvent
 import android.content.Intent
 import android.content.Context
-import android.util.Log
-import android.app.usage.UsageStatsManager
 import android.app.ActivityManager
+import android.app.usage.UsageStatsManager
+import android.util.Log
 import org.json.JSONArray
 import java.util.Calendar
 
 class UsageAccessibilityService : AccessibilityService() {
 
     private val TAG = "UsageService"
-
-    // Throttle: only re-check if the foreground package changed
-    private var lastCheckedPackage: String = ""
-    private var lastCheckTime: Long = 0L
-    private var lastBlockTime: Long = 0L
-    private var blockingInProgress = false
+    private var lastPkg = ""
+    private var lastCheck = 0L
+    private val blockCount = mutableMapOf<String, LongArray>() // pkg -> [count, firstBlockMs]
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         try {
             val type = event?.eventType ?: return
+            if (type != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED && type != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) return
 
-            if (type != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
-                type != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) return
+            val pkg = event.packageName?.toString()?.trim() ?: return
+            if (pkg == packageName || pkg.startsWith("com.android.")) return
 
-            val activePackage = event.packageName?.toString()?.trim() ?: return
-            val className = event.className?.toString()?.trim()
-
-            val ignoredPackages = setOf(
-                packageName,
-                "com.android.systemui",
-                "com.android.launcher",
-                "com.android.launcher3",
-                "com.google.android.apps.nexuslauncher",
-                "com.miui.home",
-                "com.sec.android.app.launcher"
-            )
-            if (ignoredPackages.contains(activePackage)) return
-
+            // throttle same package to 1s
             val now = System.currentTimeMillis()
-            if (activePackage == lastCheckedPackage) {
-                if (now - lastCheckTime < 1000) return
-            } else {
-                lastCheckedPackage = activePackage
-            }
+            if (pkg == lastPkg && now - lastCheck < 1000) return
+            lastPkg = pkg
+            lastCheck = now
 
-            lastCheckTime = now
-
-            Log.d(TAG, "Checking package: $activePackage className: $className")
-            checkAndEnforceLimits(activePackage, className)
+            checkAndBlock(pkg, event.className?.toString()?.trim())
             enforceVisiblePackages()
         } catch (e: Exception) {
-            Log.e(TAG, "onAccessibilityEvent error", e)
+            Log.e(TAG, "event error", e)
         }
     }
 
-    private fun checkAndEnforceLimits(activePackage: String, className: String?) {
-        try {
-            val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
-            val groupsJsonStr = prefs.getString("flutter.app_groups", "[]") ?: "[]"
+    private fun checkAndBlock(pkg: String, className: String?) {
+        val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+        val json = prefs.getString("flutter.app_groups", "[]") ?: "[]"
+        if (json == "[]") return
 
-            if (groupsJsonStr == "[]") return
+        val groups = JSONArray(json)
+        for (i in 0 until groups.length()) {
+            val g = groups.getJSONObject(i)
+            val pkgs = g.getJSONArray("packageNames")
+            var match = false
+            for (j in 0 until pkgs.length()) {
+                if (pkgs.getString(j).trim() == pkg) { match = true; break }
+            }
+            if (!match) continue
 
-            val groupsArray = JSONArray(groupsJsonStr)
-            var matchedGroupName: String? = null
-            var timeLimitMinutes = 0
-            val packagesInGroup = mutableListOf<String>()
-            var matchedBannedFeature: String? = null
+            val groupName = g.getString("name")
+            val limit = g.getInt("timeLimitMinutes")
 
-            // Find if activePackage is in any group
-            for (i in 0 until groupsArray.length()) {
-                val groupObj = groupsArray.getJSONObject(i)
-                val pkgsArray = groupObj.getJSONArray("packageNames")
-                val currentGroupPkgs = mutableListOf<String>()
-                var matchFound = false
-
-                for (j in 0 until pkgsArray.length()) {
-                    val pkg = pkgsArray.getString(j).trim()
-                    currentGroupPkgs.add(pkg)
-                    if (pkg == activePackage) matchFound = true
-                }
-
-                if (matchFound) {
-                    matchedGroupName = groupObj.getString("name")
-                    timeLimitMinutes = groupObj.getInt("timeLimitMinutes")
-                    packagesInGroup.addAll(currentGroupPkgs)
-
-                    // Check banned features with activity patterns
-                    if (className != null && groupObj.has("bannedFeatures")) {
-                        val bansArray = groupObj.getJSONArray("bannedFeatures")
-                        for (b in 0 until bansArray.length()) {
-                            val ban = bansArray.getJSONObject(b)
-                            val featureName = ban.getString("name")
-                            if (ban.has("activityPattern")) {
-                                val pattern = ban.getString("activityPattern")
-                                if (className.matches(Regex(pattern, RegexOption.IGNORE_CASE))) {
-                                    matchedBannedFeature = featureName
-                                    Log.d(TAG, "Banned feature detected: $featureName (className: $className matches $pattern)")
-                                    break
-                                }
-                            }
+            // check banned features first
+            if (className != null && g.has("bannedFeatures")) {
+                val bans = g.getJSONArray("bannedFeatures")
+                for (b in 0 until bans.length()) {
+                    val ban = bans.getJSONObject(b)
+                    if (ban.has("activityPattern")) {
+                        val pattern = ban.getString("activityPattern")
+                        if (className.matches(Regex(pattern, RegexOption.IGNORE_CASE))) {
+                            Log.d(TAG, "ban: ${ban.getString("name")} in $pkg")
+                            blockApp(pkg, groupName, ban.getString("name"))
+                            return
                         }
                     }
-                    break
                 }
             }
 
-            if (matchedGroupName == null) return // App is not tracked
+            // check time limit
+            val bonus = prefs.getInt("flutter.bonus_seconds_$groupName", 0)
+            val totalLimit = limit + (bonus / 60)
+            if (totalLimit == 0) { blockApp(pkg, groupName); return }
 
-            // If a banned feature with activity pattern was detected, block immediately
-            if (matchedBannedFeature != null) {
-                blockAndKillApp(activePackage, matchedGroupName, matchedBannedFeature)
-                return
+            val usm = getSystemService(USAGE_STATS_SERVICE) as UsageStatsManager
+            val cal = Calendar.getInstance().apply {
+                set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
             }
+            var stats = usm.queryUsageStats(UsageStatsManager.INTERVAL_BEST, cal.timeInMillis, System.currentTimeMillis())
+            if (stats.isNullOrEmpty()) stats = usm.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, cal.timeInMillis, System.currentTimeMillis())
 
-            // Read bonus seconds, convert to whole minutes (floor — strict)
-            val bonusKey = "flutter.bonus_seconds_$matchedGroupName"
-            val bonusSeconds = prefs.getInt(bonusKey, 0)
-            val bonusMinutes = bonusSeconds / 60
-            val totalAllowedMinutes = timeLimitMinutes + bonusMinutes
-
-            // --- Zero limit = ALWAYS BLOCK immediately, skip usage stats ---
-            if (totalAllowedMinutes == 0) {
-                Log.d(TAG, "Zero limit for $matchedGroupName — blocking immediately")
-                blockAndKillApp(activePackage, matchedGroupName)
-                return
-            }
-
-            // Get today's usage with INTERVAL_BEST for freshest data
-            val usm = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
-            val calendar = Calendar.getInstance()
-            calendar.set(Calendar.HOUR_OF_DAY, 0)
-            calendar.set(Calendar.MINUTE, 0)
-            calendar.set(Calendar.SECOND, 0)
-            calendar.set(Calendar.MILLISECOND, 0)
-            val startOfDay = calendar.timeInMillis
-            val now = System.currentTimeMillis()
-
-            // Use INTERVAL_BEST for most up-to-date data; fall back to INTERVAL_DAILY
-            var statsList = usm.queryUsageStats(UsageStatsManager.INTERVAL_BEST, startOfDay, now)
-            if (statsList.isNullOrEmpty()) {
-                statsList = usm.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, startOfDay, now)
-            }
-
-            var totalUsageMs = 0L
-            if (statsList != null) {
-                for (stat in statsList) {
-                    if (packagesInGroup.contains(stat.packageName)) {
-                        totalUsageMs += stat.totalTimeInForeground
+            var totalMs = 0L
+            if (stats != null) {
+                for (s in stats) {
+                    if (s.packageName in listOf(pkg)) { // simplified: just check current pkg
+                        totalMs += s.totalTimeInForeground
                     }
                 }
             }
-
-            val totalUsageMinutes = (totalUsageMs / 60000).toInt()
-            Log.d(TAG, "Group: $matchedGroupName | Used: ${totalUsageMinutes}m | Limit: ${totalAllowedMinutes}m | Raw ms: $totalUsageMs")
-
-            if (totalUsageMinutes >= totalAllowedMinutes) {
-                Log.d(TAG, "Limit reached. Blocking $activePackage")
-                blockAndKillApp(activePackage, matchedGroupName)
+            if (totalMs / 60000 >= totalLimit) {
+                Log.d(TAG, "block $pkg ($groupName): ${totalMs/60000}m >= ${totalLimit}m")
+                blockApp(pkg, groupName)
             }
-
-        } catch (e: Exception) {
-            Log.e(TAG, "Error checking limits", e)
+            return
         }
     }
 
-    private fun blockApp(groupName: String, bannedFeatureName: String? = null) {
-        if (blockingInProgress) return
-        blockingInProgress = true
-        lastBlockTime = System.currentTimeMillis()
+    private fun blockApp(pkg: String, group: String, feature: String? = null) {
+        val now = System.currentTimeMillis()
 
-        // Dismiss floating windows / PiP before launching lock screen
-        performGlobalAction(GLOBAL_ACTION_BACK)
-        performGlobalAction(GLOBAL_ACTION_RECENTS)
-        performGlobalAction(GLOBAL_ACTION_BACK)
+        // track rapid re-blocks within 5s window
+        val entry = blockCount[pkg]
+        val count = if (entry != null && now - entry[1] < 5000) entry[0].toInt() + 1 else 1
+        blockCount[pkg] = longArrayOf(count.toLong(), if (count == 1) now else entry!![1])
+        val aggressive = count >= 3
 
-        // Go to home screen
-        val homeIntent = Intent(Intent.ACTION_MAIN)
-        homeIntent.addCategory(Intent.CATEGORY_HOME)
-        homeIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
-        startActivity(homeIntent)
+        if (aggressive) Log.d(TAG, "aggressive block #$count for $pkg")
 
-        // Launch lock screen — no more actions after this
-        val appIntent = Intent(this, MainActivity::class.java)
-        appIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or
-                Intent.FLAG_ACTIVITY_CLEAR_TASK
-        appIntent.putExtra("SHOW_LOCK_SCREEN_APP_NAME", groupName)
-        if (bannedFeatureName != null) {
-            appIntent.putExtra("SHOW_LOCK_SCREEN_FEATURE_NAME", bannedFeatureName)
-        }
-        startActivity(appIntent)
-
-        blockingInProgress = false
-    }
-
-    /**
-     * Blocks the offending app and optionally kills its process.
-     * This works for both foreground checks and split‑screen / PiP windows.
-     */
-    private fun blockAndKillApp(packageToKill: String, groupName: String, bannedFeatureName: String? = null) {
+        // kill app
         try {
-            blockApp(groupName, bannedFeatureName)
-
-            // Kill using every available method
+            val am = getSystemService(ACTIVITY_SERVICE) as ActivityManager
             try {
-                val am = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-
-                // Method 1: killBackgroundProcesses
-                am.killBackgroundProcesses(packageToKill)
-                Log.d(TAG, "killBackgroundProcesses for $packageToKill")
-
-                // Method 2: forceStopPackage via reflection (kills foreground too)
+                am::class.java.getMethod("forceStopPackage", String::class.java).invoke(am, pkg)
+                Log.d(TAG, "forceStop $pkg")
+            } catch (_: Exception) {
+                am.killBackgroundProcesses(pkg)
+                Log.d(TAG, "killBg $pkg")
                 try {
-                    val forceStop = am::class.java.getMethod("forceStopPackage", String::class.java)
-                    forceStop.invoke(am, packageToKill)
-                    Log.d(TAG, "forceStopPackage for $packageToKill")
-                } catch (e: Exception) {
-                    Log.e(TAG, "forceStopPackage failed (no permission)", e)
-                }
-
-                // Method 3: find PID and kill via Process
-                try {
-                    val runningApps = am.runningAppProcesses
-                    if (runningApps != null) {
-                        for (proc in runningApps) {
-                            if (proc.processName == packageToKill) {
-                                android.os.Process.killProcess(proc.pid)
-                                Log.d(TAG, "killProcess pid=${proc.pid} for $packageToKill")
-                            }
-                        }
+                    for (p in (am.runningAppProcesses ?: emptyList())) {
+                        if (p.processName == pkg) android.os.Process.killProcess(p.pid)
                     }
-                } catch (e: Exception) {
-                    Log.e(TAG, "killProcess failed", e)
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to kill $packageToKill", e)
+                } catch (_: Exception) {}
             }
-        } finally {
-            blockingInProgress = false
+        } catch (_: Exception) {}
+
+        if (aggressive) {
+            // dismiss floating windows before lock screen
+            performGlobalAction(GLOBAL_ACTION_BACK)
+            performGlobalAction(GLOBAL_ACTION_RECENTS)
+            performGlobalAction(GLOBAL_ACTION_BACK)
+            try { Thread.sleep(200) } catch (_: Exception) {}
+            val home = Intent(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_HOME)
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            startActivity(home)
+            try { Thread.sleep(100) } catch (_: Exception) {}
         }
+
+        // show lock screen
+        val i = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+            putExtra("SHOW_LOCK_SCREEN_APP_NAME", group)
+            if (feature != null) putExtra("SHOW_LOCK_SCREEN_FEATURE_NAME", feature)
+        }
+        startActivity(i)
     }
 
-    // ---------------------------------------------------------------------
-    // Additional helpers for split‑screen / PiP enforcement
-    // ---------------------------------------------------------------------
-
-    /**
-     * Checks every window currently owned by the AccessibilityService and blocks any
-     * package that belongs to a group whose limit has been exceeded. This catches apps
-     * that are visible in split‑screen or Picture‑in‑Picture mode where the normal
-     * foreground‑package detection does not fire.
-     */
     private fun enforceVisiblePackages() {
         try {
             val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
-            val groupsJsonStr = prefs.getString("flutter.app_groups", "[]") ?: "[]"
-            if (groupsJsonStr == "[]") return
-
-            val groupsArray = JSONArray(groupsJsonStr)
-            // Map each package to its group limit for quick lookup
-            val packageToGroup = mutableMapOf<String, Pair<String, Int>>() // pkg -> (groupName, limitMinutes)
-            for (i in 0 until groupsArray.length()) {
-                val groupObj = groupsArray.getJSONObject(i)
-                val groupName = groupObj.getString("name")
-                val limit = groupObj.getInt("timeLimitMinutes")
-                val pkgs = groupObj.getJSONArray("packageNames")
+            val json = prefs.getString("flutter.app_groups", "[]") ?: "[]"
+            if (json == "[]") return
+            val groups = JSONArray(json)
+            val pkgToGroup = mutableMapOf<String, Pair<String, Int>>()
+            for (i in 0 until groups.length()) {
+                val g = groups.getJSONObject(i)
+                val pkgs = g.getJSONArray("packageNames")
                 for (j in 0 until pkgs.length()) {
-                    val pkg = pkgs.getString(j).trim()
-                    packageToGroup[pkg] = Pair(groupName, limit)
+                    pkgToGroup[pkgs.getString(j).trim()] = Pair(g.getString("name"), g.getInt("timeLimitMinutes"))
                 }
             }
-
-            // Iterate over all active windows and enforce limits
-            for (window in windows) {
-                val root = window.root
-                if (root != null) {
-                    val pkg = root.packageName?.toString()?.trim() ?: continue
-                    val pair = packageToGroup[pkg] ?: continue
-                    val (groupName, limitMinutes) = pair
-
-                    // Calculate usage for this group (same logic as before)
-                    val totalUsageMinutes = getUsageMinutesForGroup(groupName, pkg)
-                    val bonusKey = "flutter.bonus_seconds_" + groupName
-                    val bonusSeconds = prefs.getInt(bonusKey, 0)
-                    val totalAllowed = limitMinutes + (bonusSeconds / 60)
-                    if (totalAllowed == 0 || totalUsageMinutes >= totalAllowed) {
-                        Log.d(TAG, "Enforcing block for $pkg (group $groupName) via window check")
-                        blockAndKillApp(pkg, groupName)
-                        return
-                    }
+            for (w in windows) {
+                val root = w.root ?: continue
+                val p = root.packageName?.toString()?.trim() ?: continue
+                val pair = pkgToGroup[p] ?: continue
+                val (name, limit) = pair
+                val bonus = prefs.getInt("flutter.bonus_seconds_$name", 0)
+                if (limit + (bonus / 60) == 0 || getUsageMinutesForGroup(name, p) >= (limit + (bonus / 60))) {
+                    blockApp(p, name); return
                 }
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error in enforceVisiblePackages", e)
-        }
+        } catch (_: Exception) {}
     }
 
-    /**
-     * Helper that returns the total usage minutes for the given group across the day.
-     * Duplicated from checkAndEnforceLimits to keep the logic self‑contained.
-     */
-    private fun getUsageMinutesForGroup(groupName: String, samplePkg: String): Int {
+    private fun getUsageMinutesForGroup(group: String, sample: String): Int {
         return try {
-            val usm = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
-            val calendar = Calendar.getInstance()
-            calendar.set(Calendar.HOUR_OF_DAY, 0)
-            calendar.set(Calendar.MINUTE, 0)
-            calendar.set(Calendar.SECOND, 0)
-            calendar.set(Calendar.MILLISECOND, 0)
-            val startOfDay = calendar.timeInMillis
-            val now = System.currentTimeMillis()
-            var stats = usm.queryUsageStats(UsageStatsManager.INTERVAL_BEST, startOfDay, now)
-            if (stats.isNullOrEmpty()) {
-                stats = usm.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, startOfDay, now)
+            val usm = getSystemService(USAGE_STATS_SERVICE) as UsageStatsManager
+            val cal = Calendar.getInstance().apply {
+                set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
             }
-            var totalMs = 0L
+            var stats = usm.queryUsageStats(UsageStatsManager.INTERVAL_BEST, cal.timeInMillis, System.currentTimeMillis())
+            if (stats.isNullOrEmpty()) stats = usm.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, cal.timeInMillis, System.currentTimeMillis())
             val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
-            val groupsJsonStr = prefs.getString("flutter.app_groups", "[]") ?: "[]"
-            val groupsArray = JSONArray(groupsJsonStr)
-            val pkgList = mutableListOf<String>()
-            for (i in 0 until groupsArray.length()) {
-                val g = groupsArray.getJSONObject(i)
-                if (g.getString("name") == groupName) {
-                    val pkgs = g.getJSONArray("packageNames")
-                    for (j in 0 until pkgs.length()) {
-                        pkgList.add(pkgs.getString(j).trim())
-                    }
+            val json = prefs.getString("flutter.app_groups", "[]") ?: "[]"
+            val groups = JSONArray(json)
+            val pkgs = mutableListOf<String>()
+            for (i in 0 until groups.length()) {
+                val g = groups.getJSONObject(i)
+                if (g.getString("name") == group) {
+                    val a = g.getJSONArray("packageNames")
+                    for (j in 0 until a.length()) pkgs.add(a.getString(j).trim())
                 }
             }
-            for (stat in stats) {
-                if (pkgList.contains(stat.packageName)) {
-                    totalMs += stat.totalTimeInForeground
-                }
-            }
-            (totalMs / 60000).toInt()
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to compute usage for $groupName", e)
-            0
-        }
+            var ms = 0L
+            for (s in stats) { if (s.packageName in pkgs) ms += s.totalTimeInForeground }
+            (ms / 60000).toInt()
+        } catch (_: Exception) { 0 }
     }
 
-    override fun onServiceConnected() {
-        super.onServiceConnected()
-        val info = AccessibilityServiceInfo()
-        info.eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED or
-                AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
-        info.feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
-        info.flags = AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS or
-                AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
-        info.notificationTimeout = 100
-        serviceInfo = info
-        Log.d(TAG, "Service connected with flags: ${info.flags}")
-    }
-
-    override fun onInterrupt() {
-        Log.d(TAG, "Service Interrupted")
-    }
+    override fun onInterrupt() {}
 }

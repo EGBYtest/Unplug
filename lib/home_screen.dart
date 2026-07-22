@@ -100,6 +100,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       total += groupUsage;
     }
     if (!mounted) return;
+
+    final today = DateTime.now().toIso8601String().substring(0, 10);
+    await _storage.saveDailyEntry(today, total);
+
+    if (!mounted) return;
     setState(() {
       _usageMinutes = usage;
       _totalMinutesToday = total;
@@ -310,11 +315,28 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final double fraction = _totalLimitMinutes > 0
         ? (_totalMinutesToday / _totalLimitMinutes).clamp(0.0, 1.0)
         : 0.0;
-    final Color ringColor = fraction < 0.6
-        ? const Color(0xFF30D158)
-        : fraction < 0.85
-            ? const Color(0xFFFFD60A)
-            : const Color(0xFFFF3B30);
+
+    final double? weeklyAverage = _storage.getAverageDailyMinutes();
+    final bool hasAverage = weeklyAverage != null;
+    final bool isOverAverage = hasAverage && _totalMinutesToday > weeklyAverage;
+    final int diffMinutes = hasAverage ? (_totalMinutesToday - weeklyAverage).abs().round() : 0;
+
+    final Color ringColor = !hasAverage
+        ? const Color(0xFF0A84FF)
+        : isOverAverage
+            ? const Color(0xFFFF3B30)
+            : const Color(0xFF30D158);
+
+    String subtitle;
+    if (_loading) {
+      subtitle = '';
+    } else if (!hasAverage) {
+      subtitle = 'No weekly data yet';
+    } else if (isOverAverage) {
+      subtitle = '${_fmt(diffMinutes)} over weekly avg';
+    } else {
+      subtitle = '${_fmt(diffMinutes)} under weekly avg';
+    }
 
     return Center(
       child: Container(
@@ -349,7 +371,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 const SizedBox(height: 4),
                 const Text("Today's Screentime", style: TextStyle(fontSize: 13, color: Colors.white54, fontWeight: FontWeight.w500)),
                 const SizedBox(height: 2),
-                Text('of ${_fmt(_totalLimitMinutes)} limit', style: TextStyle(fontSize: 12, color: ringColor, fontWeight: FontWeight.w600)),
+                Text(subtitle, style: TextStyle(fontSize: 12, color: ringColor, fontWeight: FontWeight.w600)),
               ],
             ),
           ],

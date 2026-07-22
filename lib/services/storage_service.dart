@@ -97,6 +97,48 @@ class StorageService {
     await _prefs?.setString('last_bonus_reset', today);
   }
 
+  // ─── Daily screen time history ─────────────────────────────────────────────
+  // Stores daily totals (minutes) keyed by date string "YYYY-MM-DD".
+  static const String _dailyHistoryKey = 'daily_screen_time';
+
+  Map<String, int> loadDailyHistory() {
+    final json = _prefs?.getString(_dailyHistoryKey);
+    if (json == null || json.isEmpty) return {};
+    try {
+      final decoded = jsonDecode(json) as Map<String, dynamic>;
+      return decoded.map((k, v) => MapEntry(k, (v as num).toInt()));
+    } catch (_) {
+      return {};
+    }
+  }
+
+  Future<void> saveDailyEntry(String date, int minutes) async {
+    final history = loadDailyHistory();
+    history[date] = minutes;
+    await _prefs?.setString(_dailyHistoryKey, jsonEncode(history));
+  }
+
+  double? getAverageDailyMinutes({int days = 7}) {
+    final history = loadDailyHistory();
+    if (history.isEmpty) return null;
+
+    final today = DateTime.now().toIso8601String().substring(0, 10);
+    final cutoff = DateTime.now().subtract(Duration(days: days));
+    final cutoffStr = cutoff.toIso8601String().substring(0, 10);
+
+    int total = 0;
+    int count = 0;
+    for (final entry in history.entries) {
+      if (entry.key == today) continue;
+      if (entry.key.compareTo(cutoffStr) >= 0) {
+        total += entry.value;
+        count++;
+      }
+    }
+    if (count == 0) return null;
+    return total / count;
+  }
+
   // ─── Defaults ──────────────────────────────────────────────────────────────
 
   List<AppGroup> _defaultGroups() => [
