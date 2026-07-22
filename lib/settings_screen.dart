@@ -305,12 +305,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   children: _groups.asMap().entries.map((e) {
                     final i = e.key;
                     final group = e.value;
+                    final bonusSeconds = _storage.getBonusSeconds(group.name);
                     return CupertinoListTile(
                       backgroundColor: const Color(0xFF1C1C1E),
                       leading: Icon(CupertinoIcons.timer, color: const Color(0xFF0A84FF), size: 22),
                       title: Text(group.name, style: const TextStyle(color: Colors.white)),
-                      subtitle: Text('${group.packageNames.length} apps', style: const TextStyle(color: Colors.white38, fontSize: 12)),
-                      additionalInfo: Text(_formatMinutes(group.timeLimitMinutes), style: const TextStyle(color: Colors.white70)),
+                      subtitle: Text(
+                        '${group.packageNames.length} apps${bonusSeconds > 0 ? "  •  +${_formatSeconds(bonusSeconds)} bonus" : ""}',
+                        style: const TextStyle(color: Colors.white38, fontSize: 12),
+                      ),
+                      additionalInfo: Text(_formatMinutes(group.timeLimitMinutes + bonusSeconds ~/ 60), style: const TextStyle(color: Colors.white70)),
                       trailing: _isUnlocked ? const CupertinoListTileChevron() : null,
                       onTap: _isUnlocked ? () => _showGroupOptions(i) : null,
                     );
@@ -482,10 +486,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   void _showGroupOptions(int index) {
     final group = _groups[index];
+    final bonusSeconds = _storage.getBonusSeconds(group.name);
     showCupertinoModalPopup(
       context: context,
       builder: (_) => CupertinoActionSheet(
         title: Text(group.name),
+        message: bonusSeconds > 0
+            ? Text('${_formatSeconds(bonusSeconds)} bonus time remaining', style: const TextStyle(color: Color(0xFF30D158), fontSize: 12))
+            : null,
         actions: [
           CupertinoActionSheetAction(child: const Text('Edit Time Limit'), onPressed: () { Navigator.pop(context); _editLimit(index); }),
           CupertinoActionSheetAction(child: const Text('Edit Apps in Group'), onPressed: () { Navigator.pop(context); _editGroupApps(index); }),
@@ -495,6 +503,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 : 'Banned Features'),
             onPressed: () { Navigator.pop(context); _editBannedFeatures(index); },
           ),
+          if (bonusSeconds > 0)
+            CupertinoActionSheetAction(
+              isDestructiveAction: true,
+              child: const Text('Remove Bonus Time'),
+              onPressed: () {
+                Navigator.pop(context);
+                showCupertinoDialog(
+                  context: context,
+                  builder: (ctx) => CupertinoAlertDialog(
+                    title: const Text('Remove Bonus Time'),
+                    content: Text('Remove ${_formatSeconds(bonusSeconds)} bonus time from "${group.name}"?'),
+                    actions: [
+                      CupertinoDialogAction(child: const Text('Cancel'), onPressed: () => Navigator.pop(ctx)),
+                      CupertinoDialogAction(
+                        isDestructiveAction: true,
+                        child: const Text('Remove'),
+                        onPressed: () async {
+                          await _storage.resetBonusSeconds(group.name);
+                          if (ctx.mounted) Navigator.pop(ctx);
+                        },
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
           CupertinoActionSheetAction(isDestructiveAction: true, child: const Text('Delete Group'), onPressed: () { Navigator.pop(context); _deleteGroup(index); }),
         ],
         cancelButton: CupertinoActionSheetAction(isDestructiveAction: true, child: const Text('Cancel'), onPressed: () => Navigator.pop(context)),

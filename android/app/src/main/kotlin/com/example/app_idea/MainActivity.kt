@@ -2,6 +2,8 @@ package com.example.app_idea
 
 import android.content.Context
 import android.content.Intent
+import android.os.Handler
+import android.os.Looper
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -89,16 +91,31 @@ class MainActivity : FlutterActivity() {
 
     override fun onResume() {
         super.onResume()
-        pendingLockScreenApp?.let { appName ->
-            val feature = pendingLockScreenFeature
-            pendingLockScreenApp = null
-            pendingLockScreenFeature = null
-            // Flutter handler is definitely registered by now
-            methodChannel?.invokeMethod("showLockScreen", mapOf(
-                "appName" to appName,
-                "bannedFeature" to (feature ?: "")
-            ))
+        val appName = pendingLockScreenApp ?: return
+        val feature = pendingLockScreenFeature
+        pendingLockScreenApp = null
+        pendingLockScreenFeature = null
+        sendLockScreenCall(appName, feature ?: "")
+    }
+
+    private fun sendLockScreenCall(appName: String, bannedFeature: String) {
+        val handler = Handler(Looper.getMainLooper())
+        var attempts = 0
+        val maxAttempts = 10 // 10 × 300ms = 3s
+        val args = mapOf("appName" to appName, "bannedFeature" to bannedFeature)
+
+        fun tryInvoke() {
+            attempts++
+            val engine = flutterEngine
+            if (engine != null && engine.dartExecutor.isExecutingDart && methodChannel != null) {
+                methodChannel!!.invokeMethod("showLockScreen", args)
+            } else if (attempts < maxAttempts) {
+                handler.postDelayed({ tryInvoke() }, 300)
+            } else {
+                android.util.Log.e("MainActivity", "Failed to invoke showLockScreen: Flutter not ready after ${maxAttempts * 300}ms")
+            }
         }
+        handler.postDelayed({ tryInvoke() }, 200)
     }
 
     override fun onNewIntent(intent: Intent) {
