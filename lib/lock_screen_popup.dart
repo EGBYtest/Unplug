@@ -75,7 +75,9 @@ class _LockScreenPopupState extends State<LockScreenPopup> {
   String get _effectiveGroupName => widget.groupName ?? widget.appName;
 
   Future<void> _grantExtraMinute() async {
-    await _storage.addBonusSeconds(_effectiveGroupName, _storage.adRewardSeconds);
+    if (_storage.adBonusEnabled) {
+      await _storage.addBonusSeconds(_effectiveGroupName, _storage.adRewardSeconds);
+    }
     if (mounted) Navigator.of(context).pop();
   }
 

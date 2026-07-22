@@ -1,73 +1,82 @@
 import 'dart:async';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/material.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
 
 class AdRewardSystem {
   static final AdRewardSystem _instance = AdRewardSystem._internal();
   factory AdRewardSystem() => _instance;
   AdRewardSystem._internal();
 
-  Future<void> initializeAds() async {}
+  RewardedAd? _rewardedAd;
+  bool _isAdReady = false;
+  bool _rewardEarned = false;
+
+  final String _adUnitId = 'ca-app-pub-3940256099942544/5224354917';
+
+  Future<void> initializeAds() async {
+    await MobileAds.instance.initialize();
+    _loadAd();
+  }
+
+  void _loadAd() {
+    _isAdReady = false;
+    _rewardEarned = false;
+    RewardedAd.load(
+      adUnitId: _adUnitId,
+      request: const AdRequest(),
+      rewardedAdLoadCallback: RewardedAdLoadCallback(
+        onAdLoaded: (ad) {
+          _rewardedAd = ad;
+          _isAdReady = true;
+          debugPrint('AdRewardSystem: Ad loaded.');
+        },
+        onAdFailedToLoad: (error) {
+          debugPrint('AdRewardSystem: Ad failed to load — $error');
+          _isAdReady = false;
+          _rewardedAd = null;
+        },
+      ),
+    );
+  }
 
   void showRewardedAd(
     BuildContext context,
     VoidCallback onRewardGranted,
     VoidCallback onAdFailed,
   ) {
-    int seconds = 5;
+    if (!_isAdReady || _rewardedAd == null) {
+      onAdFailed();
+      return;
+    }
 
-    showCupertinoDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) {
-        Timer? timer;
-        return StatefulBuilder(
-          builder: (context, setInner) {
-            timer ??= Timer.periodic(const Duration(seconds: 1), (_) {
-              seconds--;
-              if (seconds <= 0) {
-                timer?.cancel();
-                Navigator.of(context).pop();
-                onRewardGranted();
-              } else {
-                setInner(() {});
-              }
-            });
-            return _AdDialog(seconds: seconds);
-          },
-        );
+    _rewardEarned = true;
+
+    _rewardedAd!.fullScreenContentCallback = FullScreenContentCallback(
+      onAdDismissedFullScreenContent: (ad) {
+        final earned = _rewardEarned;
+        ad.dispose();
+        _loadAd();
+
+        if (earned) {
+          onRewardGranted();
+        } else {
+          onAdFailed();
+        }
+      },
+      onAdFailedToShowFullScreenContent: (ad, error) {
+        debugPrint('AdRewardSystem: Failed to show — $error');
+        ad.dispose();
+        _loadAd();
+        onAdFailed();
       },
     );
-  }
-}
 
-class _AdDialog extends StatelessWidget {
-  final int seconds;
-  const _AdDialog({required this.seconds});
-
-  @override
-  Widget build(BuildContext context) {
-    return CupertinoAlertDialog(
-      title: const Text('Ad'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const SizedBox(height: 12),
-          const Text('Please wait...'),
-          const SizedBox(height: 16),
-          Text(
-            '$seconds',
-            style: const TextStyle(fontSize: 34, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Bonus time available in ${seconds}s',
-            style: TextStyle(
-              color: CupertinoColors.systemGrey,
-              fontSize: 13,
-            ),
-          ),
-        ],
-      ),
+    _rewardedAd!.show(
+      onUserEarnedReward: (AdWithoutView ad, RewardItem reward) {
+        _rewardEarned = true;
+        debugPrint('AdRewardSystem: User earned reward.');
+      },
     );
   }
 }

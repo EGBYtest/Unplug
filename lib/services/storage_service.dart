@@ -35,6 +35,12 @@ class StorageService {
     await _prefs?.setInt('ad_reward_seconds', seconds);
   }
 
+  bool get adBonusEnabled => _prefs?.getBool('ad_bonus_enabled') ?? true;
+
+  Future<void> setAdBonusEnabled(bool value) async {
+    await _prefs?.setBool('ad_bonus_enabled', value);
+  }
+
   // ─── Settings Lock ──────────────────────────────────────────────────────────
 
   bool get settingsLockEnabled => _prefs?.getBool('settings_lock_enabled') ?? false;
