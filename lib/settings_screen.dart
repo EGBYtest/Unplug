@@ -82,9 +82,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  '${ctrl.text.trim().split(RegExp(r"\s+")).where((w) => w.isNotEmpty).length} / 100 words',
+                  '${ctrl.text.trim().split(RegExp(r"\s+")).where((w) => w.isNotEmpty).length} / 50 words',
                   style: TextStyle(
-                    color: wordCount >= 100 ? const Color(0xFF30D158) : Colors.white54,
+                    color: wordCount >= 50 ? const Color(0xFF30D158) : Colors.white54,
                     fontSize: 12,
                   ),
                 ),
@@ -530,7 +530,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               children: const [
                                 Icon(CupertinoIcons.pencil, color: Color(0xFF0A84FF), size: 20),
                                 SizedBox(width: 10),
-                                Text('Type 100 words to Unlock', style: TextStyle(color: Color(0xFF0A84FF), fontWeight: FontWeight.bold)),
+                                Text('Type 50 words to Unlock', style: TextStyle(color: Color(0xFF0A84FF), fontWeight: FontWeight.bold)),
                               ],
                             ),
                           ),

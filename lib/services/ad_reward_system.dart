@@ -11,6 +11,8 @@ class AdRewardSystem {
   RewardedAd? _rewardedAd;
   bool _isAdReady = false;
   bool _rewardEarned = false;
+  DateTime? _watchStartTime;
+  static const _minWatchSeconds = 30;
 
   final String _adUnitId = 'ca-app-pub-3940256099942544/5224354917';
 
@@ -52,7 +54,7 @@ class AdRewardSystem {
     VoidCallback onAdFailed,
   ) {
     if (_isAdReady && _rewardedAd != null) {
-      _presentAd(onRewardGranted, onAdFailed);
+      _presentAd(context, onRewardGranted, onAdFailed);
       return;
     }
 
@@ -63,7 +65,7 @@ class AdRewardSystem {
     void checkReady() {
       attempts++;
       if (_isAdReady && _rewardedAd != null) {
-        _presentAd(onRewardGranted, onAdFailed);
+        _presentAd(context, onRewardGranted, onAdFailed);
       } else if (attempts < maxAttempts) {
         Future.delayed(const Duration(milliseconds: 500), checkReady);
       } else {
@@ -74,20 +76,51 @@ class AdRewardSystem {
   }
 
   void _presentAd(
+    BuildContext context,
     VoidCallback onRewardGranted,
     VoidCallback onAdFailed,
   ) {
     _rewardEarned = false;
+    _watchStartTime = DateTime.now();
 
     _rewardedAd!.fullScreenContentCallback = FullScreenContentCallback(
       onAdDismissedFullScreenContent: (ad) {
         final earned = _rewardEarned;
+        final elapsed = DateTime.now().difference(_watchStartTime!).inSeconds;
         ad.dispose();
-        _loadAd();
 
-        if (earned) {
+        if (earned && elapsed >= _minWatchSeconds) {
+          _loadAd();
           onRewardGranted();
+        } else if (earned && elapsed < _minWatchSeconds) {
+          // Demo ad too short — force reload until minimum time met
+          _loadAd();
+          showCupertinoDialog(
+            context: context,
+            builder: (_) => CupertinoAlertDialog(
+              title: const Text('Keep Watching'),
+              content: Text('Please watch for at least $_minWatchSeconds seconds.\n\n${_minWatchSeconds - elapsed}s remaining.'),
+              actions: [
+                CupertinoDialogAction(
+                  child: const Text('Watch Again'),
+                  onPressed: () {
+                    Navigator.pop(context);
+                    showRewardedAd(context, onRewardGranted, onAdFailed);
+                  },
+                ),
+                CupertinoDialogAction(
+                  isDestructiveAction: true,
+                  child: const Text('Cancel'),
+                  onPressed: () {
+                    _loadAd();
+                    Navigator.pop(context);
+                  },
+                ),
+              ],
+            ),
+          );
         } else {
+          _loadAd();
           onAdFailed();
         }
       },

@@ -30,7 +30,7 @@ class _LockScreenPopupState extends State<LockScreenPopup> {
   int _countdown = 3;
   final TextEditingController _textController = TextEditingController();
   int _wordCount = 0;
-  static const int _targetWordCount = 100;
+  static const int _targetWordCount = 50;
   final MessageVerification _verifier = MessageVerification();
   final AdRewardSystem _ads = AdRewardSystem();
   final StorageService _storage = StorageService();
@@ -216,7 +216,7 @@ class _LockScreenPopupState extends State<LockScreenPopup> {
                               children: <Widget>[
                                 Icon(CupertinoIcons.pencil, size: 18),
                                 SizedBox(width: 8),
-                                Text('Type 100 words  (+time)', style: TextStyle(fontWeight: FontWeight.bold)),
+                                Text('Type 50 words  (+time)', style: TextStyle(fontWeight: FontWeight.bold)),
                               ],
                             ),
                           ),

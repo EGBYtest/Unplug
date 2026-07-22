@@ -31,7 +31,7 @@ Android screen time management app. Set daily time limits on app groups. Once ex
 | Method | Bonus Time | Notes |
 |--------|-----------|-------|
 | Watch rewarded ad | +1 min (configurable) | Ad unit IDs in `ad_reward_system.dart` |
-| Type 100-word challenge | +1 min | Copy-paste blocked; forces intentionality |
+| Type 50-word challenge | +1 min | Copy-paste blocked; forces intentionality |
 
 ### Locked Settings
 - Changing limits requires ad or typing challenge
