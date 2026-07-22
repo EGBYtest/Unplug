@@ -19,6 +19,7 @@ class UsageAccessibilityService : AccessibilityService() {
     private var lastCheckedPackage: String = ""
     private var lastCheckTime: Long = 0L
     private var lastBlockTime: Long = 0L
+    private var blockingInProgress = false
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         try {
@@ -169,32 +170,36 @@ class UsageAccessibilityService : AccessibilityService() {
     }
 
     private fun blockApp(groupName: String, bannedFeatureName: String? = null) {
+        if (blockingInProgress) return
+        blockingInProgress = true
         lastBlockTime = System.currentTimeMillis()
 
-        // Aggressive retry loop ~3s to dismiss floating windows / bubbles / PiP
-        Thread {
-            val startTime = System.currentTimeMillis()
-            while (System.currentTimeMillis() - startTime < 3000) {
-                try { performGlobalAction(GLOBAL_ACTION_BACK) } catch (_: Exception) {}
-                try { performGlobalAction(GLOBAL_ACTION_RECENTS) } catch (_: Exception) {}
+        // 1. Go to home screen
+        val homeIntent = Intent(Intent.ACTION_MAIN)
+        homeIntent.addCategory(Intent.CATEGORY_HOME)
+        homeIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        startActivity(homeIntent)
 
-                val homeIntent = Intent(Intent.ACTION_MAIN)
-                homeIntent.addCategory(Intent.CATEGORY_HOME)
-                homeIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                startActivity(homeIntent)
-
-                val appIntent = Intent(this, MainActivity::class.java)
-                appIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or
-                        Intent.FLAG_ACTIVITY_CLEAR_TASK
-                appIntent.putExtra("SHOW_LOCK_SCREEN_APP_NAME", groupName)
-                if (bannedFeatureName != null) {
-                    appIntent.putExtra("SHOW_LOCK_SCREEN_FEATURE_NAME", bannedFeatureName)
-                }
-                startActivity(appIntent)
-
-                try { Thread.sleep(500) } catch (_: Exception) {}
-            }
+        // 2. Launch lock screen
+        val appIntent = Intent(this, MainActivity::class.java)
+        appIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                Intent.FLAG_ACTIVITY_CLEAR_TASK
+        appIntent.putExtra("SHOW_LOCK_SCREEN_APP_NAME", groupName)
+        if (bannedFeatureName != null) {
+            appIntent.putExtra("SHOW_LOCK_SCREEN_FEATURE_NAME", bannedFeatureName)
         }
+        startActivity(appIntent)
+
+        // 3. Background thread: keep dismissing floating windows for ~2s
+        Thread {
+            try { Thread.sleep(300) } catch (_: Exception) {}
+            val start = System.currentTimeMillis()
+            while (System.currentTimeMillis() - start < 2000) {
+                performGlobalAction(GLOBAL_ACTION_BACK)
+                try { Thread.sleep(400) } catch (_: Exception) {}
+            }
+            blockingInProgress = false
+        }.start()
     }
 
     /**
@@ -202,47 +207,50 @@ class UsageAccessibilityService : AccessibilityService() {
      * This works for both foreground checks and split‑screen / PiP windows.
      */
     private fun blockAndKillApp(packageToKill: String, groupName: String, bannedFeatureName: String? = null) {
-        blockApp(groupName, bannedFeatureName)
-
-        // Kill using every available method
         try {
-            val am = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+            blockApp(groupName, bannedFeatureName)
 
-            // Method 1: killBackgroundProcesses
-            am.killBackgroundProcesses(packageToKill)
-            Log.d(TAG, "killBackgroundProcesses for $packageToKill")
-
-            // Method 2: forceStopPackage via reflection (kills foreground too)
+            // Kill using every available method
             try {
-                val forceStop = am::class.java.getMethod("forceStopPackage", String::class.java)
-                forceStop.invoke(am, packageToKill)
-                Log.d(TAG, "forceStopPackage for $packageToKill")
-            } catch (e: Exception) {
-                Log.e(TAG, "forceStopPackage failed (no permission)", e)
-            }
+                val am = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
 
-            // Method 3: find PID and kill via Process
-            try {
-                val runningApps = am.runningAppProcesses
-                if (runningApps != null) {
-                    for (proc in runningApps) {
-                        if (proc.processName == packageToKill) {
-                            android.os.Process.killProcess(proc.pid)
-                            Log.d(TAG, "killProcess pid=${proc.pid} for $packageToKill")
+                // Method 1: killBackgroundProcesses
+                am.killBackgroundProcesses(packageToKill)
+                Log.d(TAG, "killBackgroundProcesses for $packageToKill")
+
+                // Method 2: forceStopPackage via reflection (kills foreground too)
+                try {
+                    val forceStop = am::class.java.getMethod("forceStopPackage", String::class.java)
+                    forceStop.invoke(am, packageToKill)
+                    Log.d(TAG, "forceStopPackage for $packageToKill")
+                } catch (e: Exception) {
+                    Log.e(TAG, "forceStopPackage failed (no permission)", e)
+                }
+
+                // Method 3: find PID and kill via Process
+                try {
+                    val runningApps = am.runningAppProcesses
+                    if (runningApps != null) {
+                        for (proc in runningApps) {
+                            if (proc.processName == packageToKill) {
+                                android.os.Process.killProcess(proc.pid)
+                                Log.d(TAG, "killProcess pid=${proc.pid} for $packageToKill")
+                            }
                         }
                     }
+                } catch (e: Exception) {
+                    Log.e(TAG, "killProcess failed", e)
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "killProcess failed", e)
+                Log.e(TAG, "Failed to kill $packageToKill", e)
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to kill $packageToKill", e)
-        }
 
-        // Extra dismissals
-        try { Thread.sleep(100) } catch (_: Exception) {}
-        try { performGlobalAction(GLOBAL_ACTION_BACK) } catch (_: Exception) {}
-        try { performGlobalAction(GLOBAL_ACTION_HOME) } catch (_: Exception) {}
+            // Extra dismissals
+            try { Thread.sleep(100) } catch (_: Exception) {}
+            try { performGlobalAction(GLOBAL_ACTION_BACK) } catch (_: Exception) {}
+        } finally {
+            blockingInProgress = false
+        }
     }
 
     // ---------------------------------------------------------------------
