@@ -3,6 +3,13 @@ allprojects {
         google()
         mavenCentral()
     }
+
+    // Ensure all subprojects (including plugins) use a modern compileSdk
+    afterEvaluate { sub ->
+        if (sub.hasProperty("android") && sub.android.hasProperty("compileSdkVersion")) {
+            sub.android.compileSdkVersion = 34
+        }
+    }
 }
 
 rootProject.buildDir = "../build"
