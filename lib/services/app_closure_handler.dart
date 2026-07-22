@@ -57,6 +57,15 @@ class AppClosureHandler {
     }
   }
 
+  /// Returns device manufacturer name (e.g. "samsung", "xiaomi", "oneplus")
+  Future<String?> getDeviceManufacturer() async {
+    try {
+      return await _channel.invokeMethod('getDeviceManufacturer');
+    } on PlatformException {
+      return null;
+    }
+  }
+
   /// Displays the LockScreen as full-screen route.
   /// Returns when lock screen is dismissed.
   Future<void> showLockScreen(BuildContext context, String appName, {String? bannedFeature}) {

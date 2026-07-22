@@ -1,4 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="accessibility_service_description">Used by Unplug to detect when limited apps are opened.</string>
+    <string name="accessibility_service_description">Unplug helps users with attention management and digital wellbeing. This service monitors foreground app switches and in-app tabs to notify you when self-imposed time limits or content restrictions are triggered. No personal data is collected, stored, or transmitted. All processing happens locally on-device.</string>
 </resources>

@@ -42,6 +42,9 @@ class MainActivity : FlutterActivity() {
                     val our = "$packageName/$packageName.UsageAccessibilityService"
                     result.success((Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: "").split(":").contains(our))
                 }
+                "getDeviceManufacturer" -> {
+                    result.success(android.os.Build.MANUFACTURER)
+                }
                 "getInstalledApps" -> {
                     val pm = packageManager
                     val list = pm.getInstalledApplications(PackageManager.GET_META_DATA).mapNotNull {

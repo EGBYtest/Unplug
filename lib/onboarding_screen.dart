@@ -15,12 +15,19 @@ class _OnboardingScreenState extends State<OnboardingScreen> with WidgetsBinding
   bool _hasUsageAccess = false;
   bool _hasAccessibility = false;
   bool _isChecking = false;
+  String? _manufacturer;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _initManufacturer();
     _checkPermissions();
+  }
+
+  Future<void> _initManufacturer() async {
+    final m = await AppClosureHandler().getDeviceManufacturer();
+    if (mounted) setState(() => _manufacturer = m?.toLowerCase());
   }
 
   @override
@@ -29,7 +36,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> with WidgetsBinding
     super.dispose();
   }
 
-  // Re-check when user comes back from Settings
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
@@ -51,7 +57,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> with WidgetsBinding
   }
 
   Future<void> _continueToApp() async {
-    // Save onboarding completion so we skip this on next launch
     await StorageService().setOnboardingComplete();
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
@@ -59,9 +64,67 @@ class _OnboardingScreenState extends State<OnboardingScreen> with WidgetsBinding
     );
   }
 
+  /// Returns manufacturer-specific accessibility setup instructions.
+  String _getAccessibilityInstructions() {
+    final m = _manufacturer ?? '';
+
+    if (m.contains('xiaomi') || m.contains('redmi') || m.contains('poco')) {
+      return 'Settings → Additional settings → Accessibility → Downloaded apps → Unplug.\n\n'
+          'IMPORTANT for MIUI/HyperOS:\n'
+          '• Enable "Autostart" in App Info → Autostart.\n'
+          '• Set Battery Saver to "No restrictions" in App Info → Battery saver.\n'
+          '• Lock Unplug in recent apps (swipe down on app preview).';
+    }
+    if (m.contains('samsung')) {
+      return 'Settings → Accessibility → Installed apps → Unplug.\n\n'
+          'Samsung One UI tip: if the switch resets after reboot, go to '
+          'Device Care → Battery → Background usage limits → Add Unplug to '
+          '"Never sleeping apps".';
+    }
+    if (m.contains('oppo') || m.contains('oneplus') || m.contains('realme')) {
+      return 'Settings → Additional settings → Accessibility → Downloaded services → Unplug.\n\n'
+          'ColorOS/OxygenOS tip: lock Unplug in recent apps (tap the lock icon) '
+          'to prevent system from killing it.';
+    }
+    if (m.contains('huawei') || m.contains('honor')) {
+      return 'Settings → Accessibility features → Accessibility → Downloaded services → Unplug.\n\n'
+          'EMUI tip: go to App Launch in settings and set Unplug to "Manage manually" '
+          'with Auto-launch, Secondary launch, and Run in background all enabled.';
+    }
+    if (m.contains('vivo') || m.contains('iqoo')) {
+      return 'Settings → Accessibility → Installed services → Unplug.\n\n'
+          'Funtouch OS tip: enable Autostart and disable battery optimization for Unplug.';
+    }
+
+    // Pixel, Motorola, Nokia, ASUS, Sony, and other stock/near-stock Android
+    return 'Settings → Accessibility → Downloaded apps → Unplug.\n\n'
+        'Tap the card above to open Accessibility settings directly. '
+        'Look for "Unplug" under Downloaded apps/services and toggle it on.';
+  }
+
+  /// Returns extra warnings for specific manufacturers.
+  String? _getExtraWarnings() {
+    final m = _manufacturer ?? '';
+
+    if (m.contains('xiaomi') || m.contains('redmi') || m.contains('poco')) {
+      return 'MIUI/HyperOS may kill the background service even after enabling it. '
+          'Follow the tips in the Accessibility card below to prevent this.';
+    }
+    if (m.contains('oppo') || m.contains('oneplus') || m.contains('realme')) {
+      return 'ColorOS/OxygenOS aggressively kills background services. '
+          'Lock Unplug in recent apps after setup.';
+    }
+    if (m.contains('huawei') || m.contains('honor')) {
+      return 'EMUI may disable the service after reboot. '
+          'Configure App Launch settings as described below.';
+    }
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final allGranted = _hasUsageAccess && _hasAccessibility;
+    final extraWarning = _getExtraWarnings();
 
     return CupertinoPageScaffold(
       backgroundColor: Colors.black,
@@ -101,6 +164,38 @@ class _OnboardingScreenState extends State<OnboardingScreen> with WidgetsBinding
               ),
 
               const SizedBox(height: 48),
+
+              // Play Protect Notice (sideload installs)
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1C1C1E),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: const Color(0xFFFF9F0A).withOpacity(0.3)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: const [
+                        Icon(CupertinoIcons.shield_lefthalf_fill, color: Color(0xFFFF9F0A), size: 18),
+                        SizedBox(width: 8),
+                        Text('Play Protect Notice', style: TextStyle(color: Color(0xFFFF9F0A), fontWeight: FontWeight.w700, fontSize: 15)),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Google Play Protect may warn you during install because Unplug uses an Accessibility Service — a sensitive Android permission. '
+                      'This is normal for sideloaded apps that monitor app usage.\n\n'
+                      'To install: tap "More details" → "Install anyway".\n'
+                      'Unplug is fully open-source and does not collect any data.',
+                      style: TextStyle(color: Colors.white70, height: 1.6, fontSize: 14),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 16),
 
               // Privacy / Open Source Notice
               Container(
@@ -144,7 +239,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> with WidgetsBinding
               _PermissionCard(
                 icon: CupertinoIcons.chart_bar_fill,
                 title: 'Usage Access',
-                description: 'Lets Unplug see how long you\'ve used each app today.',
+                description: 'Lets Unplug see how long you\'ve used each app today. '
+                    'This is a standard Android permission also used by Digital Wellbeing.\n\n'
+                    'Unplug only reads usage stats — it never accesses any other data.',
                 isGranted: _hasUsageAccess,
                 onTap: () async {
                   await AppClosureHandler().openUsageAccessSettings();
@@ -152,10 +249,35 @@ class _OnboardingScreenState extends State<OnboardingScreen> with WidgetsBinding
               ),
               const SizedBox(height: 12),
 
+              if (extraWarning != null) ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  margin: const EdgeInsets.only(bottom: 12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1C1C1E),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFFFF9F0A).withOpacity(0.3)),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Padding(
+                        padding: EdgeInsets.only(top: 2),
+                        child: Icon(CupertinoIcons.exclamationmark_triangle_fill, color: Color(0xFFFF9F0A), size: 16),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(extraWarning, style: const TextStyle(color: Color(0xFFFF9F0A), fontSize: 13, height: 1.4)),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+
               _PermissionCard(
                 icon: CupertinoIcons.eye_fill,
                 title: 'Accessibility Service',
-                description: 'Detects when a time-limited app is opened and redirects you to the lock screen.\n\nOn some devices (OxygenOS/ColorOS), tap "Downloaded apps" then select Unplug.',
+                description: _getAccessibilityInstructions(),
                 isGranted: _hasAccessibility,
                 onTap: () async {
                   await AppClosureHandler().openAccessibilitySettings();

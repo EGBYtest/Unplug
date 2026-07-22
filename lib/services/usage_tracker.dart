@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'package:usage_stats/usage_stats.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../models/app_group.dart';
 import 'app_closure_handler.dart';
 
