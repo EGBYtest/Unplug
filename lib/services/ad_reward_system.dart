@@ -19,7 +19,7 @@ class AdRewardSystem {
     _loadAd();
   }
 
-  void _loadAd() {
+  void _loadAd({int retryCount = 0}) {
     _isAdReady = false;
     _rewardEarned = false;
     RewardedAd.load(
@@ -35,22 +35,49 @@ class AdRewardSystem {
           debugPrint('AdRewardSystem: Ad failed to load — $error');
           _isAdReady = false;
           _rewardedAd = null;
+          if (retryCount < 5) {
+            Future.delayed(Duration(seconds: 2 * (retryCount + 1)), () {
+              _loadAd(retryCount: retryCount + 1);
+            });
+          }
         },
       ),
     );
   }
 
+  /// Attempt to show ad with retry if not ready yet.
   void showRewardedAd(
     BuildContext context,
     VoidCallback onRewardGranted,
     VoidCallback onAdFailed,
   ) {
-    if (!_isAdReady || _rewardedAd == null) {
-      onAdFailed();
+    if (_isAdReady && _rewardedAd != null) {
+      _presentAd(onRewardGranted, onAdFailed);
       return;
     }
 
-    _rewardEarned = true;
+    // Ad not ready — start loading and wait up to 8s
+    _loadAd();
+    int attempts = 0;
+    const maxAttempts = 16; // 16 × 500ms = 8s
+    void checkReady() {
+      attempts++;
+      if (_isAdReady && _rewardedAd != null) {
+        _presentAd(onRewardGranted, onAdFailed);
+      } else if (attempts < maxAttempts) {
+        Future.delayed(const Duration(milliseconds: 500), checkReady);
+      } else {
+        onAdFailed();
+      }
+    }
+    Future.delayed(const Duration(milliseconds: 500), checkReady);
+  }
+
+  void _presentAd(
+    VoidCallback onRewardGranted,
+    VoidCallback onAdFailed,
+  ) {
+    _rewardEarned = false;
 
     _rewardedAd!.fullScreenContentCallback = FullScreenContentCallback(
       onAdDismissedFullScreenContent: (ad) {

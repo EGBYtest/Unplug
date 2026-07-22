@@ -171,29 +171,30 @@ class UsageAccessibilityService : AccessibilityService() {
     private fun blockApp(groupName: String, bannedFeatureName: String? = null) {
         lastBlockTime = System.currentTimeMillis()
 
-        // 0. Try to dismiss floating windows / bubbles with global back action
-        try {
-            performGlobalAction(GLOBAL_ACTION_BACK)
-        } catch (_: Exception) {}
+        // Aggressive retry loop ~3s to dismiss floating windows / bubbles / PiP
+        Thread {
+            val startTime = System.currentTimeMillis()
+            while (System.currentTimeMillis() - startTime < 3000) {
+                try { performGlobalAction(GLOBAL_ACTION_BACK) } catch (_: Exception) {}
+                try { performGlobalAction(GLOBAL_ACTION_RECENTS) } catch (_: Exception) {}
 
-        // 1. Go to home screen
-        val homeIntent = Intent(Intent.ACTION_MAIN)
-        homeIntent.addCategory(Intent.CATEGORY_HOME)
-        homeIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
-        homeIntent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
-        startActivity(homeIntent)
+                val homeIntent = Intent(Intent.ACTION_MAIN)
+                homeIntent.addCategory(Intent.CATEGORY_HOME)
+                homeIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                startActivity(homeIntent)
 
-        // 2. Launch our app to show the lock screen over everything
-        val appIntent = Intent(this, MainActivity::class.java)
-        appIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or
-                Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                Intent.FLAG_ACTIVITY_SINGLE_TOP or
-                Intent.FLAG_ACTIVITY_CLEAR_TASK
-        appIntent.putExtra("SHOW_LOCK_SCREEN_APP_NAME", groupName)
-        if (bannedFeatureName != null) {
-            appIntent.putExtra("SHOW_LOCK_SCREEN_FEATURE_NAME", bannedFeatureName)
+                val appIntent = Intent(this, MainActivity::class.java)
+                appIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_CLEAR_TASK
+                appIntent.putExtra("SHOW_LOCK_SCREEN_APP_NAME", groupName)
+                if (bannedFeatureName != null) {
+                    appIntent.putExtra("SHOW_LOCK_SCREEN_FEATURE_NAME", bannedFeatureName)
+                }
+                startActivity(appIntent)
+
+                try { Thread.sleep(500) } catch (_: Exception) {}
+            }
         }
-        startActivity(appIntent)
     }
 
     /**
@@ -201,20 +202,47 @@ class UsageAccessibilityService : AccessibilityService() {
      * This works for both foreground checks and split‑screen / PiP windows.
      */
     private fun blockAndKillApp(packageToKill: String, groupName: String, bannedFeatureName: String? = null) {
-        // First, show the lock UI for the group.
         blockApp(groupName, bannedFeatureName)
-        // Then attempt to kill the offending package.
+
+        // Kill using every available method
         try {
             val am = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+
+            // Method 1: killBackgroundProcesses
             am.killBackgroundProcesses(packageToKill)
-            Log.d(TAG, "Killed background processes for $packageToKill")
+            Log.d(TAG, "killBackgroundProcesses for $packageToKill")
+
+            // Method 2: forceStopPackage via reflection (kills foreground too)
+            try {
+                val forceStop = am::class.java.getMethod("forceStopPackage", String::class.java)
+                forceStop.invoke(am, packageToKill)
+                Log.d(TAG, "forceStopPackage for $packageToKill")
+            } catch (e: Exception) {
+                Log.e(TAG, "forceStopPackage failed (no permission)", e)
+            }
+
+            // Method 3: find PID and kill via Process
+            try {
+                val runningApps = am.runningAppProcesses
+                if (runningApps != null) {
+                    for (proc in runningApps) {
+                        if (proc.processName == packageToKill) {
+                            android.os.Process.killProcess(proc.pid)
+                            Log.d(TAG, "killProcess pid=${proc.pid} for $packageToKill")
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "killProcess failed", e)
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to kill $packageToKill", e)
         }
-        // Extra attempt for floating windows — send another back press
-        try {
-            performGlobalAction(GLOBAL_ACTION_BACK)
-        } catch (_: Exception) {}
+
+        // Extra dismissals
+        try { Thread.sleep(100) } catch (_: Exception) {}
+        try { performGlobalAction(GLOBAL_ACTION_BACK) } catch (_: Exception) {}
+        try { performGlobalAction(GLOBAL_ACTION_HOME) } catch (_: Exception) {}
     }
 
     // ---------------------------------------------------------------------
