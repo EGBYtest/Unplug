@@ -201,7 +201,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                               builder: (_) => LockScreenPopup(
                                 appName: group.name,
                                 groupName: group.name,
-                                bannedFeatures: group.bannedFeatures,
                               ),
                             ).then((_) => _loadUsage()),
                           );

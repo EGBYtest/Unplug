@@ -7,6 +7,7 @@ import 'services/message_verification.dart';
 import 'services/storage_service.dart';
 import 'services/usage_tracker.dart';
 import 'models/app_group.dart';
+import 'models/banned_feature.dart';
 import 'utils/no_paste_formatter.dart';
 import 'screens/app_picker_screen.dart';
 
@@ -501,83 +502,172 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  static const _banPresets = {
+    'YouTube Shorts': 'com.google.android.youtube.*(shorts|reel)',
+    'Snapchat Spotlight': 'com.snapchat.android.*(spotlight|discover)',
+    'Instagram Reels': 'com.instagram.*(reel|clip)',
+    'TikTok For You': 'com.zhiliaoapp.musically.*(feed|recommend)',
+    'Facebook Reels': 'com.facebook.katana.*(reel|watch)',
+  };
+
   void _editBannedFeatures(int index) {
-    final group = _groups[index];
-    final controller = TextEditingController();
+    final nameCtrl = TextEditingController();
+    final patternCtrl = TextEditingController();
+    String? selectedPreset;
 
     showCupertinoDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setInner) {
-          final features = List<String>.from(_groups[index].bannedFeatures);
+          final features = _groups[index].bannedFeatures;
           return CupertinoAlertDialog(
             title: const Text('Banned Features'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text('Features permanently blocked in this group. No ad bypass — typing challenge only.'),
-                const SizedBox(height: 12),
-                if (features.isNotEmpty)
-                  Container(
-                    constraints: const BoxConstraints(maxHeight: 160),
-                    child: ListView.builder(
-                      shrinkWrap: true,
-                      itemCount: features.length,
-                      itemBuilder: (_, i) => Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 2),
-                        child: Row(
-                          children: [
-                            Expanded(child: Text(features[i], style: const TextStyle(color: Colors.white, fontSize: 13))),
-                            GestureDetector(
-                              onTap: () {
-                                features.removeAt(i);
-                                _groups[index] = AppGroup(
-                                  name: group.name,
-                                  packageNames: group.packageNames,
-                                  timeLimitMinutes: group.timeLimitMinutes,
-                                  bannedFeatures: features,
-                                );
-                                setInner(() {});
-                              },
-                              child: const Icon(CupertinoIcons.xmark_circle_fill, color: Color(0xFFFF3B30), size: 18),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Features blocked in this group. No ad bypass — typing challenge only. If an activity pattern is set, detection happens automatically when you open that section.'),
+                    const SizedBox(height: 12),
+                    if (features.isNotEmpty) ...[
+                      const Text('Current bans:', style: TextStyle(color: Colors.white54, fontSize: 12)),
+                      const SizedBox(height: 4),
+                      ...features.asMap().entries.map((e) {
+                        final i = e.key;
+                        final f = e.value;
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 2),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(f.name, style: const TextStyle(color: Colors.white, fontSize: 13)),
+                                    if (f.activityPattern != null)
+                                      Text(f.activityPattern!, style: const TextStyle(color: Colors.white38, fontSize: 10)),
+                                  ],
+                                ),
+                              ),
+                              GestureDetector(
+                                onTap: () {
+                                  final updated = List<BannedFeature>.from(features)..removeAt(i);
+                                  _groups[index] = AppGroup(
+                                    name: _groups[index].name,
+                                    packageNames: _groups[index].packageNames,
+                                    timeLimitMinutes: _groups[index].timeLimitMinutes,
+                                    bannedFeatures: updated,
+                                  );
+                                  setInner(() {});
+                                },
+                                child: const Icon(CupertinoIcons.xmark_circle_fill, color: Color(0xFFFF3B30), size: 18),
+                              ),
+                            ],
+                          ),
+                        );
+                      }),
+                      const SizedBox(height: 12),
+                    ],
+                    CupertinoTextField(
+                      controller: nameCtrl,
+                      placeholder: 'Feature name (e.g. Snapchat Spotlight)',
+                      placeholderStyle: const TextStyle(color: CupertinoColors.systemGrey, fontSize: 13),
+                      style: const TextStyle(color: CupertinoColors.white, fontSize: 13),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1C1C1E),
+                        border: Border.all(color: const Color(0xFF3A3A3C)),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      padding: const EdgeInsets.all(10),
+                    ),
+                    const SizedBox(height: 8),
+                    CupertinoTextField(
+                      controller: patternCtrl,
+                      placeholder: 'Activity pattern (optional)',
+                      placeholderStyle: const TextStyle(color: CupertinoColors.systemGrey, fontSize: 12),
+                      style: const TextStyle(color: CupertinoColors.white, fontSize: 12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1C1C1E),
+                        border: Border.all(color: const Color(0xFF3A3A3C)),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      padding: const EdgeInsets.all(8),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text('Presets:', style: TextStyle(color: Colors.white54, fontSize: 11)),
+                    const SizedBox(height: 4),
+                    SizedBox(
+                      height: 28,
+                      child: ListView(
+                        scrollDirection: Axis.horizontal,
+                        children: _banPresets.entries.map((e) {
+                          final isSelected = selectedPreset == e.key;
+                          return GestureDetector(
+                            onTap: () {
+                              selectedPreset = isSelected ? null : e.key;
+                              if (selectedPreset != null) {
+                                nameCtrl.text = e.key;
+                                patternCtrl.text = e.value;
+                              }
+                              setInner(() {});
+                            },
+                            child: Container(
+                              margin: const EdgeInsets.only(right: 6),
+                              padding: const EdgeInsets.symmetric(horizontal: 10),
+                              decoration: BoxDecoration(
+                                color: isSelected ? const Color(0xFF0A84FF) : const Color(0xFF2C2C2E),
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                              child: Center(
+                                child: Text(e.key, style: TextStyle(color: isSelected ? Colors.white : Colors.white60, fontSize: 11)),
+                              ),
                             ),
-                          ],
-                        ),
+                          );
+                        }).toList(),
                       ),
                     ),
-                  ),
-                const SizedBox(height: 8),
-                CupertinoTextField(
-                  controller: controller,
-                  placeholder: 'e.g. Snapchat Spotlight',
-                  placeholderStyle: const TextStyle(color: CupertinoColors.systemGrey, fontSize: 13),
-                  style: const TextStyle(color: CupertinoColors.white, fontSize: 13),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF1C1C1E),
-                    border: Border.all(color: const Color(0xFF3A3A3C)),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  padding: const EdgeInsets.all(10),
+                    if (selectedPreset != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text('Pattern: ${_banPresets[selectedPreset]}', style: const TextStyle(color: Colors.white38, fontSize: 10)),
+                      ),
+                  ],
                 ),
-              ],
+              ),
             ),
             actions: [
               CupertinoDialogAction(
                 isDestructiveAction: true,
-                child: const Text('Done'),
+                child: const Text('Cancel'),
+                onPressed: () => Navigator.pop(ctx),
+              ),
+              CupertinoDialogAction(
+                child: const Text('Add'),
                 onPressed: () {
-                  final text = controller.text.trim();
-                  if (text.isNotEmpty && !features.contains(text)) {
-                    features.add(text);
-                    _groups[index] = AppGroup(
-                      name: group.name,
-                      packageNames: group.packageNames,
-                      timeLimitMinutes: group.timeLimitMinutes,
-                      bannedFeatures: features,
-                    );
-                  }
-                  Navigator.pop(ctx);
+                  final name = nameCtrl.text.trim();
+                  if (name.isEmpty) return;
+                  if (features.any((f) => f.name.toLowerCase() == name.toLowerCase())) return;
+                  final pattern = patternCtrl.text.trim();
+                  final updated = List<BannedFeature>.from(features)
+                    ..add(BannedFeature(name: name, activityPattern: pattern.isNotEmpty ? pattern : null));
+                  _groups[index] = AppGroup(
+                    name: _groups[index].name,
+                    packageNames: _groups[index].packageNames,
+                    timeLimitMinutes: _groups[index].timeLimitMinutes,
+                    bannedFeatures: updated,
+                  );
+                  nameCtrl.clear();
+                  patternCtrl.clear();
+                  selectedPreset = null;
+                  setInner(() {});
                 },
+              ),
+              CupertinoDialogAction(
+                isDestructiveAction: true,
+                child: const Text('Done'),
+                onPressed: () => Navigator.pop(ctx),
               ),
             ],
           );
