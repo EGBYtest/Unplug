@@ -18,28 +18,3 @@ migration:
     - platform: android
       create_revision: 80c2e84975bbd28ecf5f8d4bd4ca5a2490bfc819
       base_revision: 80c2e84975bbd28ecf5f8d4bd4ca5a2490bfc819
-    - platform: ios
-      create_revision: 80c2e84975bbd28ecf5f8d4bd4ca5a2490bfc819
-      base_revision: 80c2e84975bbd28ecf5f8d4bd4ca5a2490bfc819
-    - platform: linux
-      create_revision: 80c2e84975bbd28ecf5f8d4bd4ca5a2490bfc819
-      base_revision: 80c2e84975bbd28ecf5f8d4bd4ca5a2490bfc819
-    - platform: macos
-      create_revision: 80c2e84975bbd28ecf5f8d4bd4ca5a2490bfc819
-      base_revision: 80c2e84975bbd28ecf5f8d4bd4ca5a2490bfc819
-    - platform: web
-      create_revision: 80c2e84975bbd28ecf5f8d4bd4ca5a2490bfc819
-      base_revision: 80c2e84975bbd28ecf5f8d4bd4ca5a2490bfc819
-    - platform: windows
-      create_revision: 80c2e84975bbd28ecf5f8d4bd4ca5a2490bfc819
-      base_revision: 80c2e84975bbd28ecf5f8d4bd4ca5a2490bfc819
-
-  # User provided section
-
-  # List of Local paths (relative to this file) that should be
-  # ignored by the migrate tool.
-  #
-  # Files that are not part of the templates will be ignored by default.
-  unmanaged_files:
-    - 'lib/main.dart'
-    - 'ios/Runner.xcodeproj/project.pbxproj'
