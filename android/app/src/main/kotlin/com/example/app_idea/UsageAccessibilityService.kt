@@ -3,6 +3,7 @@ package com.example.app_idea
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityNodeInfo
 import android.content.Intent
 import android.content.Context
 import android.util.Log
@@ -55,12 +56,16 @@ class UsageAccessibilityService : AccessibilityService() {
         lastCheckTime = now
 
         Log.d(TAG, "Checking package: $activePackage className: $className")
-        checkAndEnforceLimits(activePackage, className)
+
+        // Collect screen text once (used for text-based ban detection)
+        val screenTexts = collectScreenText(event)
+
+        checkAndEnforceLimits(activePackage, className, screenTexts)
         // Also enforce limits for any visible packages (split‑screen / PiP)
         enforceVisiblePackages()
     }
 
-    private fun checkAndEnforceLimits(activePackage: String, className: String?) {
+    private fun checkAndEnforceLimits(activePackage: String, className: String?, screenTexts: List<String> = emptyList()) {
         try {
             val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
             val groupsJsonStr = prefs.getString("flutter.app_groups", "[]") ?: "[]"
@@ -97,6 +102,8 @@ class UsageAccessibilityService : AccessibilityService() {
                         for (b in 0 until bansArray.length()) {
                             val ban = bansArray.getJSONObject(b)
                             val featureName = ban.getString("name")
+
+                            // 1. Check className pattern
                             if (ban.has("activityPattern")) {
                                 val pattern = ban.getString("activityPattern")
                                 if (className.matches(Regex(pattern, RegexOption.IGNORE_CASE))) {
@@ -105,6 +112,23 @@ class UsageAccessibilityService : AccessibilityService() {
                                     break
                                 }
                             }
+
+                            // 2. Check screen text patterns (if className didn't match)
+                            if (matchedBannedFeature == null && ban.has("screenTextPatterns")) {
+                                val textPatterns = ban.getJSONArray("screenTextPatterns")
+                                if (textPatterns.length() > 0 && screenTexts.isNotEmpty()) {
+                                    for (t in 0 until textPatterns.length()) {
+                                        val keyword = textPatterns.getString(t).lowercase()
+                                        if (screenTexts.any { it.lowercase().contains(keyword) }) {
+                                            matchedBannedFeature = featureName
+                                            Log.d(TAG, "Banned feature by screen text: $featureName (keyword: $keyword)")
+                                            break
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (matchedBannedFeature != null) break
                         }
                     }
                     break
@@ -316,6 +340,36 @@ class UsageAccessibilityService : AccessibilityService() {
             Log.e(TAG, "Failed to compute usage for $groupName", e)
             0
         }
+    }
+
+    /**
+     * Collects all visible text from the current screen by traversing the
+     * AccessibilityNodeInfo tree. Limits traversal to 200 nodes for performance.
+     */
+    private fun collectScreenText(event: AccessibilityEvent): List<String> {
+        val texts = mutableListOf<String>()
+        val root = event.source ?: return texts
+        var nodeCount = 0
+        val maxNodes = 200
+
+        fun traverse(node: AccessibilityNodeInfo?) {
+            if (node == null || nodeCount > maxNodes) return
+            nodeCount++
+
+            // Collect text from this node
+            node.text?.toString()?.takeIf { it.isNotBlank() }?.let { texts.add(it) }
+            node.contentDescription?.toString()?.takeIf { it.isNotBlank() }?.let { texts.add(it) }
+
+            // Recurse children
+            for (i in 0 until node.childCount) {
+                traverse(node.getChild(i))
+            }
+            // Recycle nodes to avoid memory leaks (except root which belongs to event)
+            if (node !== root) node.recycle()
+        }
+
+        traverse(root)
+        return texts
     }
 
     override fun onInterrupt() {

@@ -75,9 +75,35 @@ class _LockScreenPopupState extends State<LockScreenPopup> {
   String get _effectiveGroupName => widget.groupName ?? widget.appName;
 
   Future<void> _grantExtraMinute() async {
-    if (_storage.adBonusEnabled) {
-      await _storage.addBonusSeconds(_effectiveGroupName, _storage.adRewardSeconds);
-    }
+    final seconds = _storage.adRewardSeconds;
+    await _storage.addBonusSeconds(_effectiveGroupName, seconds);
+
+    if (!mounted) return;
+
+    // Show result: +time added, with remove button
+    await showCupertinoDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: Text('+${_fmtSeconds(seconds)} Bonus'),
+        content: const Text('Extra time added to this group.'),
+        actions: [
+          CupertinoDialogAction(
+            isDestructiveAction: true,
+            child: const Text('Remove'),
+            onPressed: () async {
+              await _storage.addBonusSeconds(_effectiveGroupName, -seconds);
+              if (ctx.mounted) Navigator.of(ctx).pop();
+            },
+          ),
+          CupertinoDialogAction(
+            child: const Text('OK'),
+            onPressed: () => Navigator.of(ctx).pop(),
+          ),
+        ],
+      ),
+    );
+
     if (mounted) Navigator.of(context).pop();
   }
 

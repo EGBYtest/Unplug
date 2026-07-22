@@ -71,10 +71,56 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               child: const Text('Open Settings'),
             ),
           ],
+      ),
+    );
+  }
+
+  Future<void> _onGroupTap(AppGroup group, int bonusSeconds, int bonusMinutes) async {
+    if (bonusMinutes > 0) {
+      final remove = await showCupertinoModalPopup<bool>(
+        context: context,
+        builder: (_) => CupertinoActionSheet(
+          title: Text(group.name),
+          message: Text('$bonusMinutes min bonus active.'),
+          actions: [
+            CupertinoActionSheetAction(
+              isDestructiveAction: true,
+              child: const Text('Remove Bonus Time'),
+              onPressed: () => Navigator.pop(context, true),
+            ),
+            CupertinoActionSheetAction(
+              child: const Text('Open Lock Screen'),
+              onPressed: () => Navigator.pop(context, false),
+            ),
+          ],
+          cancelButton: CupertinoActionSheetAction(
+            child: const Text('Cancel'),
+            onPressed: () => Navigator.pop(context),
+          ),
         ),
       );
+      if (remove == true && mounted) {
+        await _storage.addBonusSeconds(group.name, -bonusSeconds);
+        await _loadUsage();
+        return;
+      }
+      if (remove != true && mounted) {
+        await showCupertinoDialog(
+          context: context,
+          builder: (_) => LockScreenPopup(appName: group.name, groupName: group.name),
+        );
+        await _loadUsage();
+        return;
+      }
+    } else {
+      await showCupertinoDialog(
+        context: context,
+        builder: (_) => LockScreenPopup(appName: group.name, groupName: group.name),
+      );
+      await _loadUsage();
     }
   }
+}
 
   @override
   void dispose() {
@@ -196,13 +242,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                             formatMinutes: _fmt,
                             isLast: isLast,
                             hasBans: group.hasBannedFeatures,
-                            onTap: () => showCupertinoDialog(
-                              context: context,
-                              builder: (_) => LockScreenPopup(
-                                appName: group.name,
-                                groupName: group.name,
-                              ),
-                            ).then((_) => _loadUsage()),
+                            onTap: () => _onGroupTap(group, bonusSeconds, bonusMinutes),
                           );
                         }).toList(),
                       ),
@@ -315,6 +355,52 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         ],
       ),
     );
+  }
+
+  Future<void> _onGroupTap(AppGroup group, int bonusSeconds, int bonusMinutes) async {
+    if (bonusMinutes > 0) {
+      final remove = await showCupertinoModalPopup<bool>(
+        context: context,
+        builder: (_) => CupertinoActionSheet(
+          title: Text(group.name),
+          message: Text('$bonusMinutes min bonus active.'),
+          actions: [
+            CupertinoActionSheetAction(
+              isDestructiveAction: true,
+              child: const Text('Remove Bonus Time'),
+              onPressed: () => Navigator.pop(context, true),
+            ),
+            CupertinoActionSheetAction(
+              child: const Text('Open Lock Screen'),
+              onPressed: () => Navigator.pop(context, false),
+            ),
+          ],
+          cancelButton: CupertinoActionSheetAction(
+            child: const Text('Cancel'),
+            onPressed: () => Navigator.pop(context),
+          ),
+        ),
+      );
+      if (remove == true && mounted) {
+        await _storage.addBonusSeconds(group.name, -bonusSeconds);
+        await _loadUsage();
+        return;
+      }
+      if (remove != true && mounted) {
+        await showCupertinoDialog(
+          context: context,
+          builder: (_) => LockScreenPopup(appName: group.name, groupName: group.name),
+        );
+        await _loadUsage();
+        return;
+      }
+    } else {
+      await showCupertinoDialog(
+        context: context,
+        builder: (_) => LockScreenPopup(appName: group.name, groupName: group.name),
+      );
+      await _loadUsage();
+    }
   }
 }
 

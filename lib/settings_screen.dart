@@ -367,25 +367,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       trailing: _isUnlocked ? const CupertinoListTileChevron() : null,
                       onTap: _isUnlocked ? () => _editAdRatio() : null,
                     ),
-                    CupertinoListTile(
-                      backgroundColor: const Color(0xFF1C1C1E),
-                      leading: const Icon(CupertinoIcons.clock, color: Color(0xFF30D158), size: 22),
-                      title: const Text('Bypasses grant extra time', style: TextStyle(color: Colors.white)),
-                      additionalInfo: Text(
-                        _storage.adBonusEnabled ? 'ON' : 'OFF',
-                        style: TextStyle(
-                          color: _storage.adBonusEnabled ? const Color(0xFF30D158) : Colors.white38,
-                          fontSize: 12,
-                        ),
-                      ),
-                      trailing: CupertinoSwitch(
-                        value: _storage.adBonusEnabled,
-                        onChanged: (val) async {
-                          await _storage.setAdBonusEnabled(val);
-                          setState(() {});
-                        },
-                      ),
-                    ),
                   ],
                 ),
 
@@ -522,16 +503,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   static const _banPresets = {
-    'YouTube Shorts': 'com.google.android.youtube.*(shorts|reel)',
-    'Snapchat Spotlight': 'com.snapchat.android.*(spotlight|discover)',
-    'Instagram Reels': 'com.instagram.*(reel|clip)',
-    'TikTok For You': 'com.zhiliaoapp.musically.*(feed|recommend)',
-    'Facebook Reels': 'com.facebook.katana.*(reel|watch)',
+    'YouTube Shorts': {'activityPattern': 'com.google.android.youtube.*(shorts|reel)', 'textPatterns': 'Shorts,Reels'},
+    'Snapchat Spotlight': {'activityPattern': 'com.snapchat.android.*(spotlight|discover)', 'textPatterns': 'Spotlight,Discover'},
+    'Instagram Reels': {'activityPattern': 'com.instagram.*(reel|clip)', 'textPatterns': 'Reels,Video'},
+    'TikTok For You': {'activityPattern': 'com.zhiliaoapp.musically.*(feed|recommend)', 'textPatterns': 'For You,FYP'},
+    'Facebook Reels': {'activityPattern': 'com.facebook.katana.*(reel|watch)', 'textPatterns': 'Reels,Watch'},
   };
 
   void _editBannedFeatures(int index) {
     final nameCtrl = TextEditingController();
     final patternCtrl = TextEditingController();
+    final textPatternCtrl = TextEditingController();
     String? selectedPreset;
 
     showCupertinoDialog(
@@ -548,7 +530,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Features blocked in this group. No ad bypass — typing challenge only. If an activity pattern is set, detection happens automatically when you open that section.'),
+                    const Text('Features blocked in this group. Add className pattern, on-screen text keywords, or both for automatic detection.'),
                     const SizedBox(height: 12),
                     if (features.isNotEmpty) ...[
                       const Text('Current bans:', style: TextStyle(color: Colors.white54, fontSize: 12)),
@@ -566,7 +548,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                   children: [
                                     Text(f.name, style: const TextStyle(color: Colors.white, fontSize: 13)),
                                     if (f.activityPattern != null)
-                                      Text(f.activityPattern!, style: const TextStyle(color: Colors.white38, fontSize: 10)),
+                                      Text('cls: ${f.activityPattern!}', style: const TextStyle(color: Colors.white38, fontSize: 10)),
+                                    if (f.screenTextPatterns.isNotEmpty)
+                                      Text('txt: ${f.screenTextPatterns.join(", ")}', style: const TextStyle(color: Colors.white38, fontSize: 10)),
                                   ],
                                 ),
                               ),
@@ -601,10 +585,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                       padding: const EdgeInsets.all(10),
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 6),
                     CupertinoTextField(
                       controller: patternCtrl,
-                      placeholder: 'Activity pattern (optional)',
+                      placeholder: 'Activity className pattern (regex)',
+                      placeholderStyle: const TextStyle(color: CupertinoColors.systemGrey, fontSize: 12),
+                      style: const TextStyle(color: CupertinoColors.white, fontSize: 12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1C1C1E),
+                        border: Border.all(color: const Color(0xFF3A3A3C)),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      padding: const EdgeInsets.all(8),
+                    ),
+                    const SizedBox(height: 6),
+                    CupertinoTextField(
+                      controller: textPatternCtrl,
+                      placeholder: 'On-screen keywords (comma-separated)',
                       placeholderStyle: const TextStyle(color: CupertinoColors.systemGrey, fontSize: 12),
                       style: const TextStyle(color: CupertinoColors.white, fontSize: 12),
                       decoration: BoxDecoration(
@@ -628,7 +625,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               selectedPreset = isSelected ? null : e.key;
                               if (selectedPreset != null) {
                                 nameCtrl.text = e.key;
-                                patternCtrl.text = e.value;
+                                patternCtrl.text = _banPresets[e.key]!['activityPattern']!;
+                                textPatternCtrl.text = _banPresets[e.key]!['textPatterns']!;
                               }
                               setInner(() {});
                             },
@@ -647,11 +645,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         }).toList(),
                       ),
                     ),
-                    if (selectedPreset != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: Text('Pattern: ${_banPresets[selectedPreset]}', style: const TextStyle(color: Colors.white38, fontSize: 10)),
-                      ),
                   ],
                 ),
               ),
@@ -669,8 +662,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   if (name.isEmpty) return;
                   if (features.any((f) => f.name.toLowerCase() == name.toLowerCase())) return;
                   final pattern = patternCtrl.text.trim();
+                  final textPatterns = textPatternCtrl.text.trim();
                   final updated = List<BannedFeature>.from(features)
-                    ..add(BannedFeature(name: name, activityPattern: pattern.isNotEmpty ? pattern : null));
+                    ..add(BannedFeature(
+                      name: name,
+                      activityPattern: pattern.isNotEmpty ? pattern : null,
+                      screenTextPatterns: textPatterns.isNotEmpty
+                          ? textPatterns.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList()
+                          : null,
+                    ));
                   _groups[index] = AppGroup(
                     name: _groups[index].name,
                     packageNames: _groups[index].packageNames,
@@ -679,6 +679,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   );
                   nameCtrl.clear();
                   patternCtrl.clear();
+                  textPatternCtrl.clear();
                   selectedPreset = null;
                   setInner(() {});
                 },
