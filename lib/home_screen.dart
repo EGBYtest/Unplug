@@ -200,7 +200,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                             bonusMinutes: bonusMinutes,
                             formatMinutes: _fmt,
                             isLast: isLast,
-                            hasBans: group.hasBannedFeatures,
                             onTap: bonusSeconds > 0
                                 ? () => showCupertinoModalPopup(
                                   context: context,
@@ -272,10 +271,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                   }
                                 : null,
                           );
-                        }).toList(),
-                      ),
-                    ),
-                  ),
+                         }).toList(),
+                       ),
+                     ),
+                   ),
                 const SizedBox(height: 24),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -443,14 +442,12 @@ class _AppLimitTile extends StatelessWidget {
   final bool isLast;
   final VoidCallback onTap;
   final VoidCallback? onRemoveBonus;
-  final bool hasBans;
 
   const _AppLimitTile({
     required this.group, required this.usedMinutes, required this.remaining,
     required this.isExhausted, required this.progress, required this.bonusMinutes,
     required this.formatMinutes, required this.isLast, required this.onTap,
     this.onRemoveBonus,
-    this.hasBans = false,
   });
 
   @override
@@ -486,7 +483,7 @@ class _AppLimitTile extends StatelessWidget {
                     children: [
                       Text(group.name, style: TextStyle(color: isExhausted ? Colors.white38 : Colors.white, fontWeight: FontWeight.w600, fontSize: 15, decoration: isExhausted ? TextDecoration.lineThrough : null)),
                       Text(
-                        '${group.packageNames.length} apps  •  ${formatMinutes(group.timeLimitMinutes)} limit${bonusMinutes > 0 ? "  +${formatMinutes(bonusMinutes)} bonus" : ""}${hasBans ? "  •  🔴 ${group.bannedFeatures.length} banned" : ""}',
+                        '${group.packageNames.length} apps  •  ${formatMinutes(group.timeLimitMinutes)} limit${bonusMinutes > 0 ? "  +${formatMinutes(bonusMinutes)} bonus" : ""}',
                         style: const TextStyle(color: Colors.white38, fontSize: 12),
                       ),
                     ],

@@ -7,7 +7,6 @@ import 'services/message_verification.dart';
 import 'services/storage_service.dart';
 import 'services/usage_tracker.dart';
 import 'models/app_group.dart';
-import 'models/banned_feature.dart';
 import 'utils/no_paste_formatter.dart';
 import 'screens/app_picker_screen.dart';
 
@@ -24,12 +23,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final StorageService _storage = StorageService();
   final UsageTracker _tracker = UsageTracker();
   late List<AppGroup> _groups;
+  late List<BannedFeature> _globalTabBlockers;
   late int _adRewardSeconds;
 
   @override
   void initState() {
     super.initState();
     _groups = List.from(_storage.loadGroups());
+    _globalTabBlockers = List.from(_storage.loadGlobalTabBlockers());
     _adRewardSeconds = _storage.adRewardSeconds;
     if (!_storage.settingsLockEnabled) _isUnlocked = true;
   }
@@ -254,10 +255,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  void _toggleBannedFeature(BannedFeature feature, bool isEnabled) async {
+    setState(() {
+      feature.isEnabled = isEnabled;
+    });
+    await _storage.saveGlobalTabBlockers(_globalTabBlockers);
+  }
+
   // ─── Save & Lock ──────────────────────────────────────────────────────────
   Future<void> _saveAndLock() async {
     setState(() => _saving = true);
     await _storage.saveGroups(_groups);
+    await _storage.saveGlobalTabBlockers(_globalTabBlockers);
     await _storage.saveAdRewardSeconds(_adRewardSeconds);
     _tracker.appGroups = List.from(_groups);
 
@@ -329,6 +338,59 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     title: const Text('Add Group', style: TextStyle(color: Colors.white)),
                     onTap: _addGroup,
                   ),
+
+                // ── In-App Tab Blockers ──
+                CupertinoListSection.insetGrouped(
+                  backgroundColor: Colors.black,
+                  decoration: BoxDecoration(color: const Color(0xFF1C1C1E), borderRadius: BorderRadius.circular(12)),
+                  header: const Text('IN-APP TAB BLOCKERS', style: TextStyle(color: Colors.white54)),
+                  footer: const Text('Blocks short-form content tabs (YouTube Shorts, Instagram Reels, Snapchat Spotlight, etc.) while keeping the rest of the application accessible.', style: TextStyle(color: Colors.white38, fontSize: 12)),
+                  children: _globalTabBlockers.isEmpty
+                      ? [
+                          CupertinoListTile(
+                            backgroundColor: const Color(0xFF1C1C1E),
+                            leading: const Icon(CupertinoIcons.arrow_counterclockwise, color: Color(0xFF0A84FF), size: 22),
+                            title: const Text('Load Default Tab Blockers', style: TextStyle(color: Colors.white)),
+                            subtitle: const Text('Tap to load YouTube Shorts, Instagram Reels & Snapchat Spotlight blockers', style: TextStyle(color: Colors.white38, fontSize: 12)),
+                            onTap: _isUnlocked
+                                ? () async {
+                                    final defaults = _storage.loadGlobalTabBlockers();
+                                    setState(() { _globalTabBlockers = defaults; });
+                                  }
+                                : null,
+                          ),
+                        ]
+                      : _globalTabBlockers.map((feature) {
+                          final IconData iconData = feature.name.contains('YouTube')
+                              ? CupertinoIcons.play_rectangle_fill
+                              : feature.name.contains('Instagram')
+                                  ? CupertinoIcons.camera_fill
+                                  : feature.name.contains('Snapchat')
+                                      ? CupertinoIcons.chat_bubble_2_fill
+                                      : feature.name.contains('Facebook')
+                                          ? CupertinoIcons.film_fill
+                                          : CupertinoIcons.shield_fill;
+                          return CupertinoListTile(
+                            backgroundColor: const Color(0xFF1C1C1E),
+                            leading: Icon(iconData, color: const Color(0xFFFF3B30), size: 22),
+                            title: Text(feature.name, style: const TextStyle(color: Colors.white)),
+                            subtitle: Text(
+                              feature.isEnabled ? 'Active • Auto-back on tab open' : 'Disabled',
+                              style: TextStyle(
+                                color: feature.isEnabled ? const Color(0xFF30D158) : Colors.white38,
+                                fontSize: 12,
+                              ),
+                            ),
+                            trailing: CupertinoSwitch(
+                              value: feature.isEnabled,
+                              onChanged: _isUnlocked
+                                  ? (val) => _toggleBannedFeature(feature, val)
+                                  : null,
+                            ),
+                          );
+                        }).toList(),
+                ),
+
                 // ── Settings Lock Toggle ──
                 CupertinoListSection.insetGrouped(
                   backgroundColor: Colors.black,
@@ -403,7 +465,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       backgroundColor: const Color(0xFF1C1C1E),
                       leading: const Icon(CupertinoIcons.info_circle_fill, color: Colors.white38, size: 22),
                       title: const Text('Version', style: TextStyle(color: Colors.white)),
-                      additionalInfo: const Text('1.1 (Beta)', style: TextStyle(color: Colors.white54)),
+                      additionalInfo: const Text('1.2 (Beta)', style: TextStyle(color: Colors.white54)),
                     ),
                   ],
                 ),
@@ -497,12 +559,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
         actions: [
           CupertinoActionSheetAction(child: const Text('Edit Time Limit'), onPressed: () { Navigator.pop(context); _editLimit(index); }),
           CupertinoActionSheetAction(child: const Text('Edit Apps in Group'), onPressed: () { Navigator.pop(context); _editGroupApps(index); }),
-          CupertinoActionSheetAction(
-            child: Text(group.hasBannedFeatures
-                ? 'Banned Features (${group.bannedFeatures.length})'
-                : 'Banned Features'),
-            onPressed: () { Navigator.pop(context); _editBannedFeatures(index); },
-          ),
           if (bonusSeconds > 0)
             CupertinoActionSheetAction(
               isDestructiveAction: true,
@@ -532,180 +588,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           CupertinoActionSheetAction(isDestructiveAction: true, child: const Text('Delete Group'), onPressed: () { Navigator.pop(context); _deleteGroup(index); }),
         ],
         cancelButton: CupertinoActionSheetAction(isDestructiveAction: true, child: const Text('Cancel'), onPressed: () => Navigator.pop(context)),
-      ),
-    );
-  }
-
-  static const _banPresets = {
-    'YouTube Shorts': 'com.google.android.youtube.*(shorts|reel)',
-    'Snapchat Spotlight': 'com.snapchat.android.*(spotlight|discover)',
-    'Instagram Reels': 'com.instagram.*(reel|clip)',
-    'TikTok For You': 'com.zhiliaoapp.musically.*(feed|recommend)',
-    'Facebook Reels': 'com.facebook.katana.*(reel|watch)',
-  };
-
-  void _editBannedFeatures(int index) {
-    final nameCtrl = TextEditingController();
-    final patternCtrl = TextEditingController();
-    String? selectedPreset;
-
-    showCupertinoDialog(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setInner) {
-          final features = _groups[index].bannedFeatures;
-          return CupertinoAlertDialog(
-            title: const Text('Banned Features'),
-            content: SizedBox(
-              width: double.maxFinite,
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Features blocked in this group. No ad bypass — typing challenge only. If an activity pattern is set, detection happens automatically when you open that section.'),
-                    const SizedBox(height: 12),
-                    if (features.isNotEmpty) ...[
-                      const Text('Current bans:', style: TextStyle(color: Colors.white54, fontSize: 12)),
-                      const SizedBox(height: 4),
-                      ...features.asMap().entries.map((e) {
-                        final i = e.key;
-                        final f = e.value;
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 2),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(f.name, style: const TextStyle(color: Colors.white, fontSize: 13)),
-                                    if (f.activityPattern != null)
-                                      Text(f.activityPattern!, style: const TextStyle(color: Colors.white38, fontSize: 10)),
-                                  ],
-                                ),
-                              ),
-                              GestureDetector(
-                                onTap: () {
-                                  final updated = List<BannedFeature>.from(features)..removeAt(i);
-                                  _groups[index] = AppGroup(
-                                    name: _groups[index].name,
-                                    packageNames: _groups[index].packageNames,
-                                    timeLimitMinutes: _groups[index].timeLimitMinutes,
-                                    bannedFeatures: updated,
-                                  );
-                                  setInner(() {});
-                                },
-                                child: const Icon(CupertinoIcons.xmark_circle_fill, color: Color(0xFFFF3B30), size: 18),
-                              ),
-                            ],
-                          ),
-                        );
-                      }),
-                      const SizedBox(height: 12),
-                    ],
-                    CupertinoTextField(
-                      controller: nameCtrl,
-                      placeholder: 'Feature name (e.g. Snapchat Spotlight)',
-                      placeholderStyle: const TextStyle(color: CupertinoColors.systemGrey, fontSize: 13),
-                      style: const TextStyle(color: CupertinoColors.white, fontSize: 13),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF1C1C1E),
-                        border: Border.all(color: const Color(0xFF3A3A3C)),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      padding: const EdgeInsets.all(10),
-                    ),
-                    const SizedBox(height: 8),
-                    CupertinoTextField(
-                      controller: patternCtrl,
-                      placeholder: 'Activity pattern (optional)',
-                      placeholderStyle: const TextStyle(color: CupertinoColors.systemGrey, fontSize: 12),
-                      style: const TextStyle(color: CupertinoColors.white, fontSize: 12),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF1C1C1E),
-                        border: Border.all(color: const Color(0xFF3A3A3C)),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      padding: const EdgeInsets.all(8),
-                    ),
-                    const SizedBox(height: 8),
-                    const Text('Presets:', style: TextStyle(color: Colors.white54, fontSize: 11)),
-                    const SizedBox(height: 4),
-                    SizedBox(
-                      height: 28,
-                      child: ListView(
-                        scrollDirection: Axis.horizontal,
-                        children: _banPresets.entries.map((e) {
-                          final isSelected = selectedPreset == e.key;
-                          return GestureDetector(
-                            onTap: () {
-                              selectedPreset = isSelected ? null : e.key;
-                              if (selectedPreset != null) {
-                                nameCtrl.text = e.key;
-                                patternCtrl.text = e.value;
-                              }
-                              setInner(() {});
-                            },
-                            child: Container(
-                              margin: const EdgeInsets.only(right: 6),
-                              padding: const EdgeInsets.symmetric(horizontal: 10),
-                              decoration: BoxDecoration(
-                                color: isSelected ? const Color(0xFF0A84FF) : const Color(0xFF2C2C2E),
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                              child: Center(
-                                child: Text(e.key, style: TextStyle(color: isSelected ? Colors.white : Colors.white60, fontSize: 11)),
-                              ),
-                            ),
-                          );
-                        }).toList(),
-                      ),
-                    ),
-                    if (selectedPreset != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: Text('Pattern: ${_banPresets[selectedPreset]}', style: const TextStyle(color: Colors.white38, fontSize: 10)),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-            actions: [
-              CupertinoDialogAction(
-                isDestructiveAction: true,
-                child: const Text('Cancel'),
-                onPressed: () => Navigator.pop(ctx),
-              ),
-              CupertinoDialogAction(
-                child: const Text('Add'),
-                onPressed: () {
-                  final name = nameCtrl.text.trim();
-                  if (name.isEmpty) return;
-                  if (features.any((f) => f.name.toLowerCase() == name.toLowerCase())) return;
-                  final pattern = patternCtrl.text.trim();
-                  final updated = List<BannedFeature>.from(features)
-                    ..add(BannedFeature(name: name, activityPattern: pattern.isNotEmpty ? pattern : null));
-                  _groups[index] = AppGroup(
-                    name: _groups[index].name,
-                    packageNames: _groups[index].packageNames,
-                    timeLimitMinutes: _groups[index].timeLimitMinutes,
-                    bannedFeatures: updated,
-                  );
-                  nameCtrl.clear();
-                  patternCtrl.clear();
-                  selectedPreset = null;
-                  setInner(() {});
-                },
-              ),
-              CupertinoDialogAction(
-                isDestructiveAction: true,
-                child: const Text('Done'),
-                onPressed: () => Navigator.pop(ctx),
-              ),
-            ],
-          );
-        },
       ),
     );
   }

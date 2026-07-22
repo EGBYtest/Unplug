@@ -53,19 +53,172 @@ class StorageService {
     await _prefs?.setBool('settings_lock_auto_enabled', true);
   }
 
+  // ─── Global In-App Tab Blockers ────────────────────────────────────────────
+
+  List<BannedFeature> loadGlobalTabBlockers() {
+    final json = _prefs?.getString('global_tab_blockers');
+    if (json == null || json.isEmpty) {
+      final defaults = _defaultGlobalTabBlockers();
+      saveGlobalTabBlockers(defaults);
+      return defaults;
+    }
+    try {
+      final List<dynamic> decoded = jsonDecode(json) as List<dynamic>;
+      final loadedMap = <String, BannedFeature>{};
+      for (final e in decoded) {
+        final feat = BannedFeature.fromJson(Map<String, dynamic>.from(e as Map));
+        loadedMap[feat.id] = feat;
+      }
+      // Merge with defaults to ensure new presets appear
+      final defaults = _defaultGlobalTabBlockers();
+      for (final d in defaults) {
+        if (!loadedMap.containsKey(d.id)) {
+          loadedMap[d.id] = d;
+        }
+      }
+      return loadedMap.values.toList();
+    } catch (_) {
+      return _defaultGlobalTabBlockers();
+    }
+  }
+
+  Future<void> saveGlobalTabBlockers(List<BannedFeature> blockers) async {
+    final encoded = jsonEncode(blockers.map((b) => b.toJson()).toList());
+    await _prefs?.setString('global_tab_blockers', encoded);
+  }
+
+  List<BannedFeature> _defaultGlobalTabBlockers() => [
+        BannedFeature(
+          id: 'snap_spotlight',
+          name: 'Snapchat Spotlight',
+          packageName: 'com.snapchat.android',
+          isEnabled: false,
+          contentKeywords: ['spotlight', 'spotlight_tab', 'discover_spotlight'],
+          activityPattern: '.*spotlight.*',
+        ),
+        BannedFeature(
+          id: 'yt_shorts',
+          name: 'YouTube Shorts',
+          packageName: 'com.google.android.youtube',
+          isEnabled: false,
+          contentKeywords: ['shorts', 'reel_player', 'shorts_tab', 'shorts_player'],
+          activityPattern: '.*reel.*|.*shorts.*',
+        ),
+        BannedFeature(
+          id: 'ig_reels',
+          name: 'Instagram Reels',
+          packageName: 'com.instagram.android',
+          isEnabled: false,
+          contentKeywords: ['reels', 'clips', 'reels_tab', 'clips_viewer'],
+          activityPattern: '.*reels.*|.*clips.*',
+        ),
+        BannedFeature(
+          id: 'fb_reels',
+          name: 'Facebook Reels',
+          packageName: 'com.facebook.katana',
+          isEnabled: false,
+          contentKeywords: ['reels', 'watch', 'fb_shorts', 'video_tab'],
+          activityPattern: '.*reels.*|.*watch.*',
+        ),
+        BannedFeature(
+          id: 'tiktok_feed',
+          name: 'TikTok Feed',
+          packageName: 'com.zhiliaoapp.musically',
+          isEnabled: false,
+          contentKeywords: ['tiktok', 'for_you', 'following'],
+        ),
+        BannedFeature(
+          id: 'reddit_popular',
+          name: 'Reddit Popular',
+          packageName: 'com.reddit.frontpage',
+          isEnabled: false,
+          contentKeywords: ['popular', 'watch', 'shorts'],
+        ),
+      ];
+
   // ─── App Groups ────────────────────────────────────────────────────────────
 
   List<AppGroup> loadGroups() {
     final json = _prefs?.getString('app_groups');
-    if (json == null || json.isEmpty) return _defaultGroups();
+    if (json == null || json.isEmpty) {
+      final defaults = _defaultGroups();
+      saveGroups(defaults);
+      return defaults;
+    }
     try {
       final List<dynamic> decoded = jsonDecode(json) as List<dynamic>;
-      return decoded
+      final loaded = decoded
           .map((e) => AppGroup.fromJson(e as Map<String, dynamic>))
           .toList();
+
+      bool needSave = false;
+      for (final group in loaded) {
+        if (group.bannedFeatures.isEmpty) {
+          final defaults = _getDefaultBannedFeaturesForGroup(group.name, group.packageNames);
+          if (defaults.isNotEmpty) {
+            group.bannedFeatures = defaults;
+            needSave = true;
+          }
+        }
+      }
+      if (needSave) {
+        saveGroups(loaded);
+      }
+      return loaded;
     } catch (_) {
       return _defaultGroups();
     }
+  }
+
+  List<BannedFeature> _getDefaultBannedFeaturesForGroup(String groupName, List<String> packageNames) {
+    final list = <BannedFeature>[];
+    final pkgs = packageNames.map((p) => p.trim()).toSet();
+
+    if (pkgs.contains('com.instagram.android') || groupName == 'Social Media') {
+      list.add(BannedFeature(
+        id: 'ig_reels',
+        name: 'Instagram Reels',
+        packageName: 'com.instagram.android',
+        contentKeywords: ['reels', 'clips', 'reels_tab', 'clips_viewer'],
+        activityPattern: '.*reels.*|.*clips.*',
+      ));
+    }
+    if (pkgs.contains('com.facebook.katana') || groupName == 'Social Media') {
+      list.add(BannedFeature(
+        id: 'fb_reels',
+        name: 'Facebook Reels',
+        packageName: 'com.facebook.katana',
+        contentKeywords: ['reels', 'watch', 'fb_shorts', 'video_tab'],
+        activityPattern: '.*reels.*|.*watch.*',
+      ));
+    }
+    if (pkgs.contains('com.snapchat.android') || groupName == 'Social Media') {
+      list.add(BannedFeature(
+        id: 'snap_spotlight',
+        name: 'Snapchat Spotlight',
+        packageName: 'com.snapchat.android',
+        contentKeywords: ['spotlight', 'spotlight_tab', 'discover_spotlight'],
+        activityPattern: '.*spotlight.*',
+      ));
+    }
+    if (pkgs.contains('com.google.android.youtube') || groupName == 'Entertainment') {
+      list.add(BannedFeature(
+        id: 'yt_shorts',
+        name: 'YouTube Shorts',
+        packageName: 'com.google.android.youtube',
+        contentKeywords: ['shorts', 'reel_player', 'shorts_tab', 'shorts_player'],
+        activityPattern: '.*reel.*|.*shorts.*',
+      ));
+    }
+    if (pkgs.contains('com.reddit.frontpage') || groupName == 'News & Reading') {
+      list.add(BannedFeature(
+        id: 'reddit_popular',
+        name: 'Reddit Popular',
+        packageName: 'com.reddit.frontpage',
+        contentKeywords: ['popular', 'watch', 'shorts'],
+      ));
+    }
+    return list;
   }
 
   Future<void> saveGroups(List<AppGroup> groups) async {
@@ -149,8 +302,32 @@ class StorageService {
             'com.facebook.katana',
             'com.twitter.android',
             'com.zhiliaoapp.musically',
+            'com.snapchat.android',
           ],
           timeLimitMinutes: 30,
+          bannedFeatures: [
+            BannedFeature(
+              id: 'ig_reels',
+              name: 'Instagram Reels',
+              packageName: 'com.instagram.android',
+              contentKeywords: ['reels', 'clips', 'reels_tab', 'clips_viewer'],
+              activityPattern: '.*reels.*|.*clips.*',
+            ),
+            BannedFeature(
+              id: 'fb_reels',
+              name: 'Facebook Reels',
+              packageName: 'com.facebook.katana',
+              contentKeywords: ['reels', 'watch', 'fb_shorts', 'video_tab'],
+              activityPattern: '.*reels.*|.*watch.*',
+            ),
+            BannedFeature(
+              id: 'snap_spotlight',
+              name: 'Snapchat Spotlight',
+              packageName: 'com.snapchat.android',
+              contentKeywords: ['spotlight', 'spotlight_tab', 'discover_spotlight'],
+              activityPattern: '.*spotlight.*',
+            ),
+          ],
         ),
         AppGroup(
           name: 'Games',
@@ -167,14 +344,33 @@ class StorageService {
             'com.netflix.mediaclient',
           ],
           timeLimitMinutes: 90,
+          bannedFeatures: [
+            BannedFeature(
+              id: 'yt_shorts',
+              name: 'YouTube Shorts',
+              packageName: 'com.google.android.youtube',
+              contentKeywords: ['shorts', 'reel_player', 'shorts_tab', 'shorts_player'],
+              activityPattern: '.*reel.*|.*shorts.*',
+            ),
+          ],
         ),
         AppGroup(
           name: 'News & Reading',
           packageNames: [
             'com.google.android.apps.magazines',
             'flipboard.app',
+            'com.reddit.frontpage',
           ],
           timeLimitMinutes: 45,
+          bannedFeatures: [
+            BannedFeature(
+              id: 'reddit_popular',
+              name: 'Reddit Popular',
+              packageName: 'com.reddit.frontpage',
+              contentKeywords: ['popular', 'watch', 'shorts'],
+            ),
+          ],
         ),
       ];
 }
+

@@ -1,8 +1,8 @@
 # ScreenTimeLock
 
-> **v1.1 (Beta)** — Take control of your digital habits.
+> **v1.2 (Beta)** — Take control of your digital habits.
 
-Android screen time management app. Set daily time limits on app groups. Once exhausted, earn extra time by watching an ad or completing a typing challenge.
+Android screen time management app. Set daily time limits on app groups. Once exhausted, earn extra time by watching an ad or completing a typing challenge. Also block specific in-app features like YouTube Shorts, Instagram Reels, and Snapchat Spotlight while keeping the rest of the app usable.
 
 > **Privacy-first, open source.** All data stored locally. Nothing leaves your device.
 
@@ -14,6 +14,13 @@ Android screen time management app. Set daily time limits on app groups. Once ex
 - Group apps into categories (Social Media, Games, Entertainment...)
 - Set daily time limit per group (30 min, 1 hour, or 0 = block immediately)
 - Saved locally, reset daily
+
+### In-App Tab Blockers (new in v1.2)
+- Block specific tabs/features within apps without blocking the entire app
+- Presets: Snapchat Spotlight, YouTube Shorts, Instagram Reels, Facebook Reels, TikTok Feed, Reddit Popular
+- Detects via activity class names and view hierarchy content keywords
+- Presses BACK to exit the blocked tab — app stays open for other features
+- Smart detection skips navigation bars, buttons, and edge-positioned UI elements to avoid false positives
 
 ### Real-Time Enforcement
 - **Accessibility Service** detects foreground app switches
@@ -80,12 +87,13 @@ ScreenTimeLock/
 | Decision | Rationale |
 |----------|-----------|
 | **Local-only storage** | SharedPreferences — no server, no network calls |
-| **Kotlin Accessibility Service** | Real-time foreground app detection |
+| **Kotlin Accessibility Service** | Real-time foreground app detection + in-app tab blocking via view hierarchy scanning |
 | **Dart-side usage stats** | `usage_stats` package for dashboard; native re-reads prefs for enforcement |
 | **MethodChannel bridge** | `app_closure` channel for Flutter ↔ Android |
 | **Cupertino widgets** | iOS-style dark theme, premium feel |
 | **Typing challenge** | Forces mindful decision to bypass limits |
 | **No re-check on foreground** | Permissions checked once during onboarding |
+| **In-app tab detection** | Scans accessibility node tree for activity class name patterns and view hierarchy content keywords; skips nav bars, clickable elements, and edge-positioned UI to avoid false positives |
 
 ---
 

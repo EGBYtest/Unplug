@@ -40,7 +40,11 @@ class _ScreenTimeLockAppState extends State<ScreenTimeLockApp> {
         final bannedFeature = args['bannedFeature'] as String?;
         final context = navigatorKey.currentContext;
         if (context != null) {
-          await AppClosureHandler().showLockScreen(context, appName as String, bannedFeature: bannedFeature);
+          await AppClosureHandler().showLockScreen(
+            context,
+            appName as String,
+            bannedFeature: (bannedFeature != null && bannedFeature.isNotEmpty) ? bannedFeature : null,
+          );
           _channel.invokeMethod('lockScreenDismissed');
         }
       }
