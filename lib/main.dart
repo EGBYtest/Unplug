@@ -18,6 +18,8 @@ void main() async {
   runApp(const UnplugApp());
 }
 
+const _appVersion = '1.2.0';
+
 Future<void> _trackInstall() async {
   final storage = StorageService();
   if (storage.installReported) return;
@@ -25,13 +27,20 @@ Future<void> _trackInstall() async {
   try {
     final client = HttpClient();
     client.connectionTimeout = const Duration(seconds: 5);
-    final request = await client.getUrl(
+
+    // Total installs
+    final r1 = await client.getUrl(
       Uri.parse('https://api.counterapi.dev/v1/unplug/installs/up'),
     );
-    final response = await request.close();
-    if (response.statusCode == 200) {
-      await storage.setInstallReported();
-    }
+    await r1.close();
+
+    // Per-version installs
+    final r2 = await client.getUrl(
+      Uri.parse('https://api.counterapi.dev/v1/unplug/installs_v$_appVersion/up'),
+    );
+    await r2.close();
+
+    await storage.setInstallReported();
     client.close();
   } catch (_) {
     // Silently fail — install tracking is non-critical
