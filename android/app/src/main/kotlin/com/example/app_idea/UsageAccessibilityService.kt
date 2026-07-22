@@ -21,43 +21,41 @@ class UsageAccessibilityService : AccessibilityService() {
     private var lastBlockTime: Long = 0L
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        val type = event?.eventType ?: return
+        try {
+            val type = event?.eventType ?: return
 
-        // React to both window state changes (app switch) and content changes (Chrome tabs)
-        if (type != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
-            type != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) return
+            if (type != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
+                type != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) return
 
-        val activePackage = event.packageName?.toString()?.trim() ?: return
-        val className = event.className?.toString()?.trim()
+            val activePackage = event.packageName?.toString()?.trim() ?: return
+            val className = event.className?.toString()?.trim()
 
-        // Ignore our own app, system UI, launchers
-        val ignoredPackages = setOf(
-            packageName,
-            "com.android.systemui",
-            "com.android.launcher",
-            "com.android.launcher3",
-            "com.google.android.apps.nexuslauncher",
-            "com.miui.home",
-            "com.sec.android.app.launcher"
-        )
-        if (ignoredPackages.contains(activePackage)) return
+            val ignoredPackages = setOf(
+                packageName,
+                "com.android.systemui",
+                "com.android.launcher",
+                "com.android.launcher3",
+                "com.google.android.apps.nexuslauncher",
+                "com.miui.home",
+                "com.sec.android.app.launcher"
+            )
+            if (ignoredPackages.contains(activePackage)) return
 
-        // Throttling: If we are seeing the same package continuously, don't check it more than once every 10 seconds
-        val now = System.currentTimeMillis()
-        if (activePackage == lastCheckedPackage) {
-            // If it's the same package, only re-evaluate its time limit every 10 seconds
-            if (now - lastCheckTime < 1000) return
-        } else {
-            // New package foregrounded
-            lastCheckedPackage = activePackage
+            val now = System.currentTimeMillis()
+            if (activePackage == lastCheckedPackage) {
+                if (now - lastCheckTime < 1000) return
+            } else {
+                lastCheckedPackage = activePackage
+            }
+
+            lastCheckTime = now
+
+            Log.d(TAG, "Checking package: $activePackage className: $className")
+            checkAndEnforceLimits(activePackage, className)
+            enforceVisiblePackages()
+        } catch (e: Exception) {
+            Log.e(TAG, "onAccessibilityEvent error", e)
         }
-
-        lastCheckTime = now
-
-        Log.d(TAG, "Checking package: $activePackage className: $className")
-        checkAndEnforceLimits(activePackage, className)
-        // Also enforce limits for any visible packages (split‑screen / PiP)
-        enforceVisiblePackages()
     }
 
     private fun checkAndEnforceLimits(activePackage: String, className: String?) {
@@ -316,6 +314,19 @@ class UsageAccessibilityService : AccessibilityService() {
             Log.e(TAG, "Failed to compute usage for $groupName", e)
             0
         }
+    }
+
+    override fun onServiceConnected() {
+        super.onServiceConnected()
+        val info = AccessibilityServiceInfo()
+        info.eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED or
+                AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
+        info.feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
+        info.flags = AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS or
+                AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
+        info.notificationTimeout = 100
+        serviceInfo = info
+        Log.d(TAG, "Service connected with flags: ${info.flags}")
     }
 
     override fun onInterrupt() {
