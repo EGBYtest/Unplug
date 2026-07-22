@@ -503,16 +503,37 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   static const _banPresets = {
-    'YouTube Shorts': {'activityPattern': 'com.google.android.youtube.*(shorts|reel)', 'textPatterns': 'Shorts,Reels'},
-    'Snapchat Spotlight': {'activityPattern': 'com.snapchat.android.*(spotlight|discover)', 'textPatterns': 'Spotlight,Discover'},
-    'Instagram Reels': {'activityPattern': 'com.instagram.*(reel|clip)', 'textPatterns': 'Reels,Video'},
-    'TikTok For You': {'activityPattern': 'com.zhiliaoapp.musically.*(feed|recommend)', 'textPatterns': 'For You,FYP'},
-    'Facebook Reels': {'activityPattern': 'com.facebook.katana.*(reel|watch)', 'textPatterns': 'Reels,Watch'},
+    'YouTube Shorts': {
+      'resourceIds': 'shorts_container,shorts_tab,shorts_video',
+      'descriptions': 'Shorts,Reels,YouTube Shorts',
+      'texts': 'Shorts',
+    },
+    'Snapchat Spotlight': {
+      'resourceIds': 'spotlight_tab,discover_tab',
+      'descriptions': 'Spotlight,Discover',
+      'texts': 'Spotlight',
+    },
+    'Instagram Reels': {
+      'resourceIds': 'reel_tab,clips_tab,reel_container',
+      'descriptions': 'Reels,Video',
+      'texts': 'Reels',
+    },
+    'TikTok For You': {
+      'resourceIds': 'tabs,for_you,recommend',
+      'descriptions': 'For You,FYP,Following',
+      'texts': 'For You',
+    },
+    'Facebook Reels': {
+      'resourceIds': 'reel_tab,watch_tab,video_container',
+      'descriptions': 'Reels,Watch,Video',
+      'texts': 'Reels',
+    },
   };
 
   void _editBannedFeatures(int index) {
     final nameCtrl = TextEditingController();
-    final patternCtrl = TextEditingController();
+    final resourceIdCtrl = TextEditingController();
+    final descriptionCtrl = TextEditingController();
     final textPatternCtrl = TextEditingController();
     String? selectedPreset;
 
@@ -530,7 +551,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Features blocked in this group. Add className pattern, on-screen text keywords, or both for automatic detection.'),
+                    const Text('Blocked features detected via on-screen UI elements. Add resource IDs, content descriptions, or on-screen text.'),
                     const SizedBox(height: 12),
                     if (features.isNotEmpty) ...[
                       const Text('Current bans:', style: TextStyle(color: Colors.white54, fontSize: 12)),
@@ -547,8 +568,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(f.name, style: const TextStyle(color: Colors.white, fontSize: 13)),
-                                    if (f.activityPattern != null)
-                                      Text('cls: ${f.activityPattern!}', style: const TextStyle(color: Colors.white38, fontSize: 10)),
+                                    if (f.resourceIdPatterns.isNotEmpty)
+                                      Text('rid: ${f.resourceIdPatterns.join(", ")}', style: const TextStyle(color: Colors.white38, fontSize: 10)),
+                                    if (f.descriptionPatterns.isNotEmpty)
+                                      Text('desc: ${f.descriptionPatterns.join(", ")}', style: const TextStyle(color: Colors.white38, fontSize: 10)),
                                     if (f.screenTextPatterns.isNotEmpty)
                                       Text('txt: ${f.screenTextPatterns.join(", ")}', style: const TextStyle(color: Colors.white38, fontSize: 10)),
                                   ],
@@ -575,7 +598,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ],
                     CupertinoTextField(
                       controller: nameCtrl,
-                      placeholder: 'Feature name (e.g. Snapchat Spotlight)',
+                      placeholder: 'Feature name (e.g. YouTube Shorts)',
                       placeholderStyle: const TextStyle(color: CupertinoColors.systemGrey, fontSize: 13),
                       style: const TextStyle(color: CupertinoColors.white, fontSize: 13),
                       decoration: BoxDecoration(
@@ -587,8 +610,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                     const SizedBox(height: 6),
                     CupertinoTextField(
-                      controller: patternCtrl,
-                      placeholder: 'Activity className pattern (regex)',
+                      controller: resourceIdCtrl,
+                      placeholder: 'Resource ID patterns (comma-sep)',
+                      placeholderStyle: const TextStyle(color: CupertinoColors.systemGrey, fontSize: 12),
+                      style: const TextStyle(color: CupertinoColors.white, fontSize: 12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1C1C1E),
+                        border: Border.all(color: const Color(0xFF3A3A3C)),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      padding: const EdgeInsets.all(8),
+                    ),
+                    const SizedBox(height: 6),
+                    CupertinoTextField(
+                      controller: descriptionCtrl,
+                      placeholder: 'Content description keywords (comma-sep)',
                       placeholderStyle: const TextStyle(color: CupertinoColors.systemGrey, fontSize: 12),
                       style: const TextStyle(color: CupertinoColors.white, fontSize: 12),
                       decoration: BoxDecoration(
@@ -601,7 +637,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     const SizedBox(height: 6),
                     CupertinoTextField(
                       controller: textPatternCtrl,
-                      placeholder: 'On-screen keywords (comma-separated)',
+                      placeholder: 'On-screen text keywords (comma-sep)',
                       placeholderStyle: const TextStyle(color: CupertinoColors.systemGrey, fontSize: 12),
                       style: const TextStyle(color: CupertinoColors.white, fontSize: 12),
                       decoration: BoxDecoration(
@@ -624,9 +660,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             onTap: () {
                               selectedPreset = isSelected ? null : e.key;
                               if (selectedPreset != null) {
+                                final p = _banPresets[e.key]!;
                                 nameCtrl.text = e.key;
-                                patternCtrl.text = _banPresets[e.key]!['activityPattern']!;
-                                textPatternCtrl.text = _banPresets[e.key]!['textPatterns']!;
+                                resourceIdCtrl.text = p['resourceIds']!;
+                                descriptionCtrl.text = p['descriptions']!;
+                                textPatternCtrl.text = p['texts']!;
                               }
                               setInner(() {});
                             },
@@ -661,12 +699,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   final name = nameCtrl.text.trim();
                   if (name.isEmpty) return;
                   if (features.any((f) => f.name.toLowerCase() == name.toLowerCase())) return;
-                  final pattern = patternCtrl.text.trim();
+                  final resourceIds = resourceIdCtrl.text.trim();
+                  final descriptions = descriptionCtrl.text.trim();
                   final textPatterns = textPatternCtrl.text.trim();
                   final updated = List<BannedFeature>.from(features)
                     ..add(BannedFeature(
                       name: name,
-                      activityPattern: pattern.isNotEmpty ? pattern : null,
+                      resourceIdPatterns: resourceIds.isNotEmpty
+                          ? resourceIds.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList()
+                          : null,
+                      descriptionPatterns: descriptions.isNotEmpty
+                          ? descriptions.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList()
+                          : null,
                       screenTextPatterns: textPatterns.isNotEmpty
                           ? textPatterns.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList()
                           : null,
@@ -678,7 +722,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     bannedFeatures: updated,
                   );
                   nameCtrl.clear();
-                  patternCtrl.clear();
+                  resourceIdCtrl.clear();
+                  descriptionCtrl.clear();
                   textPatternCtrl.clear();
                   selectedPreset = null;
                   setInner(() {});
