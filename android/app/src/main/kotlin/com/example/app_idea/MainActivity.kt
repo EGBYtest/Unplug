@@ -15,6 +15,7 @@ class MainActivity : FlutterActivity() {
     private val CHANNEL = "app_closure"
     private var methodChannel: MethodChannel? = null
     private var pendingLockScreenApp: String? = null
+    private var pendingLockScreenFeature: String? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -89,9 +90,14 @@ class MainActivity : FlutterActivity() {
     override fun onResume() {
         super.onResume()
         pendingLockScreenApp?.let { appName ->
+            val feature = pendingLockScreenFeature
             pendingLockScreenApp = null
+            pendingLockScreenFeature = null
             // Flutter handler is definitely registered by now
-            methodChannel?.invokeMethod("showLockScreen", mapOf("appName" to appName))
+            methodChannel?.invokeMethod("showLockScreen", mapOf(
+                "appName" to appName,
+                "bannedFeature" to (feature ?: "")
+            ))
         }
     }
 
@@ -102,9 +108,12 @@ class MainActivity : FlutterActivity() {
 
     private fun handleIntent(intent: Intent) {
         val appName = intent.getStringExtra("SHOW_LOCK_SCREEN_APP_NAME")
+        val featureName = intent.getStringExtra("SHOW_LOCK_SCREEN_FEATURE_NAME")
         if (appName != null) {
             pendingLockScreenApp = appName
+            pendingLockScreenFeature = featureName
             intent.removeExtra("SHOW_LOCK_SCREEN_APP_NAME")
+            intent.removeExtra("SHOW_LOCK_SCREEN_FEATURE_NAME")
         }
     }
 }

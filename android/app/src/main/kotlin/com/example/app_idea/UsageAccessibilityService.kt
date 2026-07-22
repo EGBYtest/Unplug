@@ -28,6 +28,7 @@ class UsageAccessibilityService : AccessibilityService() {
             type != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) return
 
         val activePackage = event.packageName?.toString()?.trim() ?: return
+        val className = event.className?.toString()?.trim()
 
         // Ignore our own app, system UI, launchers
         val ignoredPackages = setOf(
@@ -53,13 +54,13 @@ class UsageAccessibilityService : AccessibilityService() {
 
         lastCheckTime = now
 
-        Log.d(TAG, "Checking package: $activePackage")
-        checkAndEnforceLimits(activePackage)
+        Log.d(TAG, "Checking package: $activePackage className: $className")
+        checkAndEnforceLimits(activePackage, className)
         // Also enforce limits for any visible packages (split‑screen / PiP)
         enforceVisiblePackages()
     }
 
-    private fun checkAndEnforceLimits(activePackage: String) {
+    private fun checkAndEnforceLimits(activePackage: String, className: String?) {
         try {
             val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
             val groupsJsonStr = prefs.getString("flutter.app_groups", "[]") ?: "[]"
@@ -70,6 +71,7 @@ class UsageAccessibilityService : AccessibilityService() {
             var matchedGroupName: String? = null
             var timeLimitMinutes = 0
             val packagesInGroup = mutableListOf<String>()
+            var matchedBannedFeature: String? = null
 
             // Find if activePackage is in any group
             for (i in 0 until groupsArray.length()) {
@@ -88,11 +90,34 @@ class UsageAccessibilityService : AccessibilityService() {
                     matchedGroupName = groupObj.getString("name")
                     timeLimitMinutes = groupObj.getInt("timeLimitMinutes")
                     packagesInGroup.addAll(currentGroupPkgs)
+
+                    // Check banned features with activity patterns
+                    if (className != null && groupObj.has("bannedFeatures")) {
+                        val bansArray = groupObj.getJSONArray("bannedFeatures")
+                        for (b in 0 until bansArray.length()) {
+                            val ban = bansArray.getJSONObject(b)
+                            val featureName = ban.getString("name")
+                            if (ban.has("activityPattern")) {
+                                val pattern = ban.getString("activityPattern")
+                                if (className.matches(Regex(pattern, RegexOption.IGNORE_CASE))) {
+                                    matchedBannedFeature = featureName
+                                    Log.d(TAG, "Banned feature detected: $featureName (className: $className matches $pattern)")
+                                    break
+                                }
+                            }
+                        }
+                    }
                     break
                 }
             }
 
             if (matchedGroupName == null) return // App is not tracked
+
+            // If a banned feature with activity pattern was detected, block immediately
+            if (matchedBannedFeature != null) {
+                blockAndKillApp(activePackage, matchedGroupName, matchedBannedFeature)
+                return
+            }
 
             // Read bonus seconds, convert to whole minutes (floor — strict)
             val bonusKey = "flutter.bonus_seconds_$matchedGroupName"
@@ -145,7 +170,7 @@ class UsageAccessibilityService : AccessibilityService() {
         }
     }
 
-    private fun blockApp(groupName: String) {
+    private fun blockApp(groupName: String, bannedFeatureName: String? = null) {
         lastBlockTime = System.currentTimeMillis()
 
         // 0. Try to dismiss floating windows / bubbles with global back action
@@ -167,6 +192,9 @@ class UsageAccessibilityService : AccessibilityService() {
                 Intent.FLAG_ACTIVITY_SINGLE_TOP or
                 Intent.FLAG_ACTIVITY_CLEAR_TASK
         appIntent.putExtra("SHOW_LOCK_SCREEN_APP_NAME", groupName)
+        if (bannedFeatureName != null) {
+            appIntent.putExtra("SHOW_LOCK_SCREEN_FEATURE_NAME", bannedFeatureName)
+        }
         startActivity(appIntent)
     }
 
@@ -174,9 +202,9 @@ class UsageAccessibilityService : AccessibilityService() {
      * Blocks the offending app and optionally kills its process.
      * This works for both foreground checks and split‑screen / PiP windows.
      */
-    private fun blockAndKillApp(packageToKill: String, groupName: String) {
+    private fun blockAndKillApp(packageToKill: String, groupName: String, bannedFeatureName: String? = null) {
         // First, show the lock UI for the group.
-        blockApp(groupName)
+        blockApp(groupName, bannedFeatureName)
         // Then attempt to kill the offending package.
         try {
             val am = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager

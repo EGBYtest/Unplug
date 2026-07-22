@@ -1,14 +1,16 @@
+import 'banned_feature.dart';
+
 class AppGroup {
   String name;
   List<String> packageNames;
   int timeLimitMinutes;
-  List<String> bannedFeatures;
+  List<BannedFeature> bannedFeatures;
 
   AppGroup({
     required this.name,
     required this.packageNames,
     required this.timeLimitMinutes,
-    List<String>? bannedFeatures,
+    List<BannedFeature>? bannedFeatures,
   }) : bannedFeatures = bannedFeatures ?? [];
 
   bool get hasBannedFeatures => bannedFeatures.isNotEmpty;
@@ -22,7 +24,7 @@ class AppGroup {
     'name': name,
     'packageNames': packageNames,
     'timeLimitMinutes': timeLimitMinutes,
-    'bannedFeatures': bannedFeatures,
+    'bannedFeatures': bannedFeatures.map((f) => f.toJson()).toList(),
   };
 
   factory AppGroup.fromJson(Map<String, dynamic> json) => AppGroup(
@@ -30,7 +32,9 @@ class AppGroup {
     packageNames: List<String>.from(json['packageNames'] as List),
     timeLimitMinutes: json['timeLimitMinutes'] as int,
     bannedFeatures: json['bannedFeatures'] != null
-        ? List<String>.from(json['bannedFeatures'] as List)
+        ? (json['bannedFeatures'] as List)
+            .map((e) => BannedFeature.fromJson(e as Map<String, dynamic>))
+            .toList()
         : [],
   );
 }

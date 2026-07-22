@@ -35,12 +35,12 @@ class _ScreenTimeLockAppState extends State<ScreenTimeLockApp> {
     // (fired by AccessibilityService when a blocked app is opened)
     _channel.setMethodCallHandler((call) async {
       if (call.method == 'showLockScreen') {
-        final String appName =
-            (call.arguments is Map ? call.arguments['appName'] : null) ??
-                'App';
+        final args = call.arguments is Map ? call.arguments as Map : {};
+        final appName = args['appName'] ?? 'App';
+        final bannedFeature = args['bannedFeature'] as String?;
         final context = navigatorKey.currentContext;
         if (context != null) {
-          AppClosureHandler().showLockScreen(context, appName);
+          AppClosureHandler().showLockScreen(context, appName as String, bannedFeature: bannedFeature);
         }
       }
     });

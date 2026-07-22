@@ -10,16 +10,16 @@ import 'utils/no_paste_formatter.dart';
 class LockScreenPopup extends StatefulWidget {
   final String appName;
   final String? groupName;
-  final List<String> bannedFeatures;
+  final String? bannedFeature;
 
   const LockScreenPopup({
     Key? key,
     required this.appName,
     this.groupName,
-    this.bannedFeatures = const [],
+    this.bannedFeature,
   }) : super(key: key);
 
-  bool get hasBans => bannedFeatures.isNotEmpty;
+  bool get hasBans => bannedFeature != null && bannedFeature!.isNotEmpty;
 
   @override
   State<LockScreenPopup> createState() => _LockScreenPopupState();
@@ -140,13 +140,13 @@ class _LockScreenPopupState extends State<LockScreenPopup> {
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    widget.hasBans ? 'Banned Feature Detected' : 'Time Exhausted',
+                    widget.hasBans ? 'Banned Feature' : 'Time Exhausted',
                     style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 22, color: Colors.white),
                   ),
                   const SizedBox(height: 8),
                   Text(
                     widget.hasBans
-                        ? '${widget.appName} has features permanently banned.'
+                        ? '"${widget.bannedFeature}" was detected in ${widget.appName}.'
                         : 'Your screen time for "${widget.appName}" is up.',
                     textAlign: TextAlign.center,
                     style: const TextStyle(color: Colors.white70, fontSize: 15),
@@ -183,21 +183,16 @@ class _LockScreenPopupState extends State<LockScreenPopup> {
                               borderRadius: BorderRadius.circular(10),
                               border: Border.all(color: const Color(0xFFFF3B30).withOpacity(0.3)),
                             ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                            child: Row(
                               children: [
-                                const Text('Banned features:', style: TextStyle(color: Color(0xFFFF3B30), fontWeight: FontWeight.bold, fontSize: 13)),
-                                const SizedBox(height: 6),
-                                ...widget.bannedFeatures.map((f) => Padding(
-                                  padding: const EdgeInsets.only(bottom: 2),
-                                  child: Row(
-                                    children: [
-                                      const Icon(CupertinoIcons.xmark, color: Color(0xFFFF3B30), size: 12),
-                                      const SizedBox(width: 6),
-                                      Expanded(child: Text(f, style: const TextStyle(color: Colors.white70, fontSize: 13))),
-                                    ],
+                                const Icon(CupertinoIcons.xmark_shield_fill, color: Color(0xFFFF3B30), size: 20),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                    '"${widget.bannedFeature}" is banned in this group.',
+                                    style: const TextStyle(color: Colors.white70, fontSize: 13),
                                   ),
-                                )),
+                                ),
                               ],
                             ),
                           ),
