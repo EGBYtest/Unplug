@@ -174,13 +174,18 @@ class UsageAccessibilityService : AccessibilityService() {
         blockingInProgress = true
         lastBlockTime = System.currentTimeMillis()
 
-        // 1. Go to home screen
+        // Dismiss floating windows / PiP before launching lock screen
+        performGlobalAction(GLOBAL_ACTION_BACK)
+        performGlobalAction(GLOBAL_ACTION_RECENTS)
+        performGlobalAction(GLOBAL_ACTION_BACK)
+
+        // Go to home screen
         val homeIntent = Intent(Intent.ACTION_MAIN)
         homeIntent.addCategory(Intent.CATEGORY_HOME)
         homeIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
         startActivity(homeIntent)
 
-        // 2. Launch lock screen
+        // Launch lock screen — no more actions after this
         val appIntent = Intent(this, MainActivity::class.java)
         appIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or
                 Intent.FLAG_ACTIVITY_CLEAR_TASK
@@ -190,16 +195,7 @@ class UsageAccessibilityService : AccessibilityService() {
         }
         startActivity(appIntent)
 
-        // 3. Background thread: keep dismissing floating windows for ~2s
-        Thread {
-            try { Thread.sleep(300) } catch (_: Exception) {}
-            val start = System.currentTimeMillis()
-            while (System.currentTimeMillis() - start < 2000) {
-                performGlobalAction(GLOBAL_ACTION_BACK)
-                try { Thread.sleep(400) } catch (_: Exception) {}
-            }
-            blockingInProgress = false
-        }.start()
+        blockingInProgress = false
     }
 
     /**
@@ -244,10 +240,6 @@ class UsageAccessibilityService : AccessibilityService() {
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to kill $packageToKill", e)
             }
-
-            // Extra dismissals
-            try { Thread.sleep(100) } catch (_: Exception) {}
-            try { performGlobalAction(GLOBAL_ACTION_BACK) } catch (_: Exception) {}
         } finally {
             blockingInProgress = false
         }
