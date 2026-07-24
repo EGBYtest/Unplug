@@ -455,7 +455,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       additionalInfo: const Text('GitHub', style: TextStyle(color: Color(0xFF0A84FF))),
                       trailing: const CupertinoListTileChevron(),
                       onTap: () async {
-                        final uri = Uri.parse('https://github.com/EGBYtest/APp-idea');
+                        final uri = Uri.parse('https://github.com/EGBYtest/Unplug');
                         if (await canLaunchUrl(uri)) {
                           await launchUrl(uri);
                         }
