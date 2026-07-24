@@ -26,7 +26,6 @@ class LockScreenPopup extends StatefulWidget {
 class _LockScreenPopupState extends State<LockScreenPopup> {
   bool _showOptions = false;
   bool _showTypeChallenge = false;
-  bool _adLoading = false;
   int _countdown = 3;
   final TextEditingController _textController = TextEditingController();
   int _wordCount = 0;
@@ -85,17 +84,13 @@ class _LockScreenPopupState extends State<LockScreenPopup> {
   }
 
   void _watchAd() {
-    setState(() => _adLoading = true);
     _ads.showRewardedAd(
       context,
       () async {
-        if (mounted) {
-          setState(() => _adLoading = false);
-          await _grantExtraMinute();
-        }
+        if (mounted) await _grantExtraMinute();
       },
       () {
-        if (mounted) setState(() { _adLoading = false; _showTypeChallenge = true; });
+        if (mounted) setState(() => _showTypeChallenge = true);
       },
     );
   }
@@ -173,11 +168,6 @@ class _LockScreenPopupState extends State<LockScreenPopup> {
                         ),
                       ],
                     )
-                  else if (_adLoading)
-                    const Padding(
-                      padding: EdgeInsets.all(20),
-                      child: Center(child: CupertinoActivityIndicator()),
-                    )
                   else if (!_showTypeChallenge)
                     Column(
                       children: <Widget>[
@@ -198,7 +188,7 @@ class _LockScreenPopupState extends State<LockScreenPopup> {
                               children: <Widget>[
                                 Icon(CupertinoIcons.play_circle_fill, color: Colors.white, size: 18),
                                 SizedBox(width: 8),
-                                Text('Watch Ad  (+time)', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                                Text('Wait 30s  (+time)', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                               ],
                             ),
                           ),

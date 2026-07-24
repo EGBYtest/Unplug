@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'home_screen.dart';
 import 'onboarding_screen.dart';
-import 'services/ad_reward_system.dart';
 import 'services/storage_service.dart';
 import 'services/app_closure_handler.dart';
 
@@ -13,7 +12,6 @@ void main() async {
 
   await StorageService().init();
   await _trackInstall();
-  await AdRewardSystem().initializeAds();
 
   runApp(const UnplugApp());
 }

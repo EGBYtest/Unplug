@@ -512,7 +512,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 children: const [
                                   Icon(CupertinoIcons.play_circle_fill, color: Colors.white, size: 20),
                                   SizedBox(width: 10),
-                                  Text('Watch an Ad to Unlock', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                                  Text('Wait 30s to Unlock', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                                 ],
                               ),
                             ),

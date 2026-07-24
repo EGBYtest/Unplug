@@ -187,6 +187,7 @@ class StorageService {
         id: 'ig_reels',
         name: 'Instagram Reels',
         packageName: 'com.instagram.android',
+        isEnabled: false,
         contentKeywords: ['reels', 'clips', 'reels_tab', 'clips_viewer'],
         activityPattern: '.*reels.*|.*clips.*',
       ));
@@ -196,6 +197,7 @@ class StorageService {
         id: 'fb_reels',
         name: 'Facebook Reels',
         packageName: 'com.facebook.katana',
+        isEnabled: false,
         contentKeywords: ['reels', 'watch', 'fb_shorts', 'video_tab'],
         activityPattern: '.*reels.*|.*watch.*',
       ));
@@ -205,6 +207,7 @@ class StorageService {
         id: 'snap_spotlight',
         name: 'Snapchat Spotlight',
         packageName: 'com.snapchat.android',
+        isEnabled: false,
         contentKeywords: ['spotlight', 'spotlight_tab', 'discover_spotlight'],
         activityPattern: '.*spotlight.*',
       ));
@@ -214,6 +217,7 @@ class StorageService {
         id: 'yt_shorts',
         name: 'YouTube Shorts',
         packageName: 'com.google.android.youtube',
+        isEnabled: false,
         contentKeywords: ['shorts', 'reel_player', 'shorts_tab', 'shorts_player'],
         activityPattern: '.*reel.*|.*shorts.*',
       ));
@@ -223,6 +227,7 @@ class StorageService {
         id: 'reddit_popular',
         name: 'Reddit Popular',
         packageName: 'com.reddit.frontpage',
+        isEnabled: false,
         contentKeywords: ['popular', 'watch', 'shorts'],
       ));
     }
@@ -318,6 +323,7 @@ class StorageService {
               id: 'ig_reels',
               name: 'Instagram Reels',
               packageName: 'com.instagram.android',
+              isEnabled: false,
               contentKeywords: ['reels', 'clips', 'reels_tab', 'clips_viewer'],
               activityPattern: '.*reels.*|.*clips.*',
             ),
@@ -325,6 +331,7 @@ class StorageService {
               id: 'fb_reels',
               name: 'Facebook Reels',
               packageName: 'com.facebook.katana',
+              isEnabled: false,
               contentKeywords: ['reels', 'watch', 'fb_shorts', 'video_tab'],
               activityPattern: '.*reels.*|.*watch.*',
             ),
@@ -332,6 +339,7 @@ class StorageService {
               id: 'snap_spotlight',
               name: 'Snapchat Spotlight',
               packageName: 'com.snapchat.android',
+              isEnabled: false,
               contentKeywords: ['spotlight', 'spotlight_tab', 'discover_spotlight'],
               activityPattern: '.*spotlight.*',
             ),
@@ -357,6 +365,7 @@ class StorageService {
               id: 'yt_shorts',
               name: 'YouTube Shorts',
               packageName: 'com.google.android.youtube',
+              isEnabled: false,
               contentKeywords: ['shorts', 'reel_player', 'shorts_tab', 'shorts_player'],
               activityPattern: '.*reel.*|.*shorts.*',
             ),
@@ -375,6 +384,7 @@ class StorageService {
               id: 'reddit_popular',
               name: 'Reddit Popular',
               packageName: 'com.reddit.frontpage',
+              isEnabled: false,
               contentKeywords: ['popular', 'watch', 'shorts'],
             ),
           ],
