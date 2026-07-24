@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'dart:async';
 import 'lock_screen_popup.dart';
 import 'onboarding_screen.dart';
@@ -7,6 +8,7 @@ import 'settings_screen.dart';
 import 'services/app_closure_handler.dart';
 import 'services/usage_tracker.dart';
 import 'services/storage_service.dart';
+import 'services/update_checker.dart';
 import 'models/app_group.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -24,6 +26,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   bool _loading = true;
   Timer? _refreshTimer;
   late List<AppGroup> _groups;
+  UpdateInfo? _updateInfo;
+  bool _updateDismissed = false;
 
   @override
   void initState() {
@@ -35,6 +39,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _loadUsage();
     _refreshTimer = Timer.periodic(const Duration(seconds: 60), (_) => _loadUsage());
     WidgetsBinding.instance.addPostFrameCallback((_) => _checkPermissionsOnStart());
+    _checkUpdate();
+  }
+
+  Future<void> _checkUpdate() async {
+    final info = await UpdateChecker.check();
+    if (mounted && info.isAvailable) {
+      setState(() => _updateInfo = info);
+    }
   }
 
   Future<void> _checkPermissionsOnStart() async {
@@ -161,6 +173,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             sliver: SliverList(
               delegate: SliverChildListDelegate([
                 const SizedBox(height: 24),
+                if (_updateInfo != null && !_updateDismissed) _buildUpdateBanner(),
                 _buildRing(),
                 const SizedBox(height: 16),
                 _buildStatCards(),
@@ -374,6 +387,61 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ],
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildUpdateBanner() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      child: GestureDetector(
+        onTap: () async {
+          final uri = Uri.parse(_updateInfo!.downloadUrl);
+          if (await canLaunchUrl(uri)) {
+            await launchUrl(uri, mode: LaunchMode.externalApplication);
+          }
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1C1C1E),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFF0A84FF).withOpacity(0.3)),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 36, height: 36,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0A84FF).withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(CupertinoIcons.cloud_download_fill, color: Color(0xFF0A84FF), size: 18),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Update v${_updateInfo!.latestVersion} available',
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14),
+                    ),
+                    const SizedBox(height: 2),
+                    const Text('Tap to download', style: TextStyle(color: Colors.white38, fontSize: 12)),
+                  ],
+                ),
+              ),
+              GestureDetector(
+                onTap: () => setState(() => _updateDismissed = true),
+                child: Container(
+                  padding: const EdgeInsets.all(6),
+                  child: const Icon(CupertinoIcons.clear_circled, color: Colors.white38, size: 18),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
