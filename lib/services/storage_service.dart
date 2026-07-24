@@ -11,6 +11,22 @@ class StorageService {
   factory StorageService() => _instance;
   StorageService._internal();
 
+  static const _resetHour = 3;
+
+  static DateTime _dayStart(DateTime dt) {
+    if (dt.hour < _resetHour) {
+      dt = dt.subtract(const Duration(days: 1));
+    }
+    return DateTime(dt.year, dt.month, dt.day, _resetHour);
+  }
+
+  static String dayKey(DateTime dt) {
+    if (dt.hour < _resetHour) {
+      dt = dt.subtract(const Duration(days: 1));
+    }
+    return dt.toIso8601String().substring(0, 10);
+  }
+
   SharedPreferences? _prefs;
 
   Future<void> init() async {
@@ -251,16 +267,15 @@ class StorageService {
   }
 
   Future<void> _resetDailyBonusesIfNeeded() async {
-    final today = DateTime.now().toIso8601String().substring(0, 10);
+    final key = dayKey(DateTime.now());
     final lastReset = _prefs?.getString('last_bonus_reset') ?? '';
-    if (lastReset == today) return;
+    if (lastReset == key) return;
 
-    // Clear all bonus keys (both old minutes and new seconds format)
     final keys = _prefs?.getKeys() ?? {};
-    for (final key in keys) {
-      if (key.startsWith('bonus_')) await _prefs?.remove(key);
+    for (final k in keys) {
+      if (k.startsWith('bonus_')) await _prefs?.remove(k);
     }
-    await _prefs?.setString('last_bonus_reset', today);
+    await _prefs?.setString('last_bonus_reset', key);
   }
 
   // ─── Daily screen time history ─────────────────────────────────────────────
@@ -288,8 +303,8 @@ class StorageService {
     final history = loadDailyHistory();
     if (history.isEmpty) return null;
 
-    final today = DateTime.now().toIso8601String().substring(0, 10);
-    final cutoff = DateTime.now().subtract(Duration(days: days));
+    final today = dayKey(DateTime.now());
+    final cutoff = _dayStart(DateTime.now()).subtract(Duration(days: days));
     final cutoffStr = cutoff.toIso8601String().substring(0, 10);
 
     int total = 0;

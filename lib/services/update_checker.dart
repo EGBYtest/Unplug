@@ -15,7 +15,7 @@ class UpdateInfo {
 
 class UpdateChecker {
   static const _githubApi = 'https://api.github.com/repos/EGBYtest/APp-idea/releases/latest';
-  static const _currentVersion = '1.2.0';
+  static const _currentVersion = '1.3.0';
 
   static Future<UpdateInfo> check() async {
     try {

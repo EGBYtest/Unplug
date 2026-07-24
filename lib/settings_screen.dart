@@ -463,9 +463,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                     CupertinoListTile(
                       backgroundColor: const Color(0xFF1C1C1E),
+                      leading: const Icon(CupertinoIcons.mail_solid, color: Color(0xFFFF9F0A), size: 22),
+                      title: const Text('Contact & Feedback', style: TextStyle(color: Colors.white)),
+                      subtitle: const Text('Report bugs or suggest features', style: TextStyle(color: Colors.white38, fontSize: 12)),
+                      trailing: const CupertinoListTileChevron(),
+                      onTap: () async {
+                        final uri = Uri.parse('https://github.com/EGBYtest/Unplug/issues');
+                        if (await canLaunchUrl(uri)) {
+                          await launchUrl(uri);
+                        }
+                      },
+                    ),
+                    CupertinoListTile(
+                      backgroundColor: const Color(0xFF1C1C1E),
                       leading: const Icon(CupertinoIcons.info_circle_fill, color: Colors.white38, size: 22),
                       title: const Text('Version', style: TextStyle(color: Colors.white)),
-                      additionalInfo: const Text('1.2 (Beta)', style: TextStyle(color: Colors.white54)),
+                      additionalInfo: const Text('1.3 (Beta)', style: TextStyle(color: Colors.white54)),
                     ),
                   ],
                 ),
