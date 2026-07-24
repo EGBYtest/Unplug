@@ -163,9 +163,10 @@ class UsageAccessibilityService : AccessibilityService() {
             if (totalLimit == 0) { blockApp(pkg, groupName); return }
 
             val usm = getSystemService(USAGE_STATS_SERVICE) as UsageStatsManager
+            val resetHour = prefs.getInt("flutter.reset_hour", 3)
             val cal = Calendar.getInstance().apply {
-                if (get(Calendar.HOUR_OF_DAY) < 3) add(Calendar.DAY_OF_MONTH, -1)
-                set(Calendar.HOUR_OF_DAY, 3); set(Calendar.MINUTE, 0)
+                if (get(Calendar.HOUR_OF_DAY) < resetHour) add(Calendar.DAY_OF_MONTH, -1)
+                set(Calendar.HOUR_OF_DAY, resetHour); set(Calendar.MINUTE, 0)
                 set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
             }
             var stats = usm.queryUsageStats(UsageStatsManager.INTERVAL_BEST, cal.timeInMillis, System.currentTimeMillis())
@@ -429,15 +430,16 @@ class UsageAccessibilityService : AccessibilityService() {
 
     private fun getUsageMinutesForGroup(group: String, sample: String): Int {
         return try {
+            val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
             val usm = getSystemService(USAGE_STATS_SERVICE) as UsageStatsManager
+            val resetHour = prefs.getInt("flutter.reset_hour", 3)
             val cal = Calendar.getInstance().apply {
-                if (get(Calendar.HOUR_OF_DAY) < 3) add(Calendar.DAY_OF_MONTH, -1)
-                set(Calendar.HOUR_OF_DAY, 3); set(Calendar.MINUTE, 0)
+                if (get(Calendar.HOUR_OF_DAY) < resetHour) add(Calendar.DAY_OF_MONTH, -1)
+                set(Calendar.HOUR_OF_DAY, resetHour); set(Calendar.MINUTE, 0)
                 set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
             }
             var stats = usm.queryUsageStats(UsageStatsManager.INTERVAL_BEST, cal.timeInMillis, System.currentTimeMillis())
             if (stats.isNullOrEmpty()) stats = usm.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, cal.timeInMillis, System.currentTimeMillis())
-            val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
             val json = prefs.getString("flutter.app_groups", "[]") ?: "[]"
             val groups = JSONArray(json)
             val pkgs = mutableListOf<String>()
