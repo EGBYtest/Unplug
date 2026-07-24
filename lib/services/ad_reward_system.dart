@@ -94,13 +94,27 @@ class _PromoWaitDialogState extends State<_PromoWaitDialog> {
         title: const Text('Sponsor'),
         content: Column(
           children: [
-            const SizedBox(height: 8),
+            const SizedBox(height: 12),
+            Container(
+              width: 72,
+              height: 72,
+              decoration: BoxDecoration(
+                color: const Color(0xFF0A84FF).withOpacity(0.12),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                CupertinoIcons.clock_fill,
+                color: Color(0xFF0A84FF),
+                size: 34,
+              ),
+            ),
+            const SizedBox(height: 16),
             const Text(
-              'Build & buy YOUR own custom WATCH',
+              'Build & buy your own custom watch',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 2),
             GestureDetector(
               onTap: () async {
                 final uri = Uri.parse('https://yourwatch.no');
@@ -109,16 +123,16 @@ class _PromoWaitDialogState extends State<_PromoWaitDialog> {
                 }
               },
               child: Text(
-                'yourwatch.no',
+                'at yourwatch.no',
                 style: TextStyle(
-                  fontSize: 18,
+                  fontSize: 16,
                   fontWeight: FontWeight.bold,
                   color: CupertinoTheme.of(context).primaryColor,
                   decoration: TextDecoration.underline,
                 ),
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 20),
             Text(
               'Wait ${_remaining}s for +time',
               style: const TextStyle(fontSize: 13, color: Colors.white54),

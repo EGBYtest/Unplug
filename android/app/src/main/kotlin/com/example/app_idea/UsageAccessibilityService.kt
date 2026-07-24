@@ -164,7 +164,8 @@ class UsageAccessibilityService : AccessibilityService() {
 
             val usm = getSystemService(USAGE_STATS_SERVICE) as UsageStatsManager
             val cal = Calendar.getInstance().apply {
-                set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
+                if (get(Calendar.HOUR_OF_DAY) < 3) add(Calendar.DAY_OF_MONTH, -1)
+                set(Calendar.HOUR_OF_DAY, 3); set(Calendar.MINUTE, 0)
                 set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
             }
             var stats = usm.queryUsageStats(UsageStatsManager.INTERVAL_BEST, cal.timeInMillis, System.currentTimeMillis())
@@ -430,7 +431,8 @@ class UsageAccessibilityService : AccessibilityService() {
         return try {
             val usm = getSystemService(USAGE_STATS_SERVICE) as UsageStatsManager
             val cal = Calendar.getInstance().apply {
-                set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
+                if (get(Calendar.HOUR_OF_DAY) < 3) add(Calendar.DAY_OF_MONTH, -1)
+                set(Calendar.HOUR_OF_DAY, 3); set(Calendar.MINUTE, 0)
                 set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
             }
             var stats = usm.queryUsageStats(UsageStatsManager.INTERVAL_BEST, cal.timeInMillis, System.currentTimeMillis())

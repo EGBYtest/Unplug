@@ -44,10 +44,12 @@ class UsageTracker {
     }
   }
 
-  /// Returns usage time in minutes for a specific package today.
+  /// Returns usage time in minutes for a specific package today (reset at 03:00).
   Future<int> getUsageTime(String packageName) async {
-    DateTime endDate = DateTime.now();
-    DateTime startDate = DateTime(endDate.year, endDate.month, endDate.day); // Start of today
+    final endDate = DateTime.now();
+    final startDate = endDate.hour < 3
+        ? DateTime(endDate.year, endDate.month, endDate.day - 1, 3)
+        : DateTime(endDate.year, endDate.month, endDate.day, 3);
 
     List<UsageInfo> usageStats = await UsageStats.queryUsageStats(startDate, endDate);
     for (var info in usageStats) {
