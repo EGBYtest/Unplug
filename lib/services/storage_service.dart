@@ -11,23 +11,29 @@ class StorageService {
   factory StorageService() => _instance;
   StorageService._internal();
 
-  static const _resetHour = 3;
+  SharedPreferences? _prefs;
 
-  static DateTime _dayStart(DateTime dt) {
-    if (dt.hour < _resetHour) {
-      dt = dt.subtract(const Duration(days: 1));
-    }
-    return DateTime(dt.year, dt.month, dt.day, _resetHour);
+  int get resetHour => _prefs?.getInt('reset_hour') ?? 3;
+
+  Future<void> saveResetHour(int hour) async {
+    await _prefs?.setInt('reset_hour', hour);
   }
 
-  static String dayKey(DateTime dt) {
-    if (dt.hour < _resetHour) {
+  DateTime _dayStart(DateTime dt) {
+    final h = resetHour;
+    if (dt.hour < h) {
+      dt = dt.subtract(const Duration(days: 1));
+    }
+    return DateTime(dt.year, dt.month, dt.day, h);
+  }
+
+  String dayKey(DateTime dt) {
+    final h = resetHour;
+    if (dt.hour < h) {
       dt = dt.subtract(const Duration(days: 1));
     }
     return dt.toIso8601String().substring(0, 10);
   }
-
-  SharedPreferences? _prefs;
 
   Future<void> init() async {
     _prefs = await SharedPreferences.getInstance();

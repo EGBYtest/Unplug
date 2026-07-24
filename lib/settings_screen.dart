@@ -25,6 +25,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late List<AppGroup> _groups;
   late List<BannedFeature> _globalTabBlockers;
   late int _adRewardSeconds;
+  late int _resetHour;
 
   @override
   void initState() {
@@ -32,6 +33,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _groups = List.from(_storage.loadGroups());
     _globalTabBlockers = List.from(_storage.loadGlobalTabBlockers());
     _adRewardSeconds = _storage.adRewardSeconds;
+    _resetHour = _storage.resetHour;
     if (!_storage.settingsLockEnabled) _isUnlocked = true;
   }
 
@@ -268,6 +270,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await _storage.saveGroups(_groups);
     await _storage.saveGlobalTabBlockers(_globalTabBlockers);
     await _storage.saveAdRewardSeconds(_adRewardSeconds);
+    await _storage.saveResetHour(_resetHour);
     _tracker.appGroups = List.from(_groups);
 
     // Auto-enable settings lock only once after first save
@@ -432,6 +435,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       additionalInfo: Text(_formatSeconds(_adRewardSeconds), style: const TextStyle(color: Colors.white70)),
                       trailing: _isUnlocked ? const CupertinoListTileChevron() : null,
                       onTap: _isUnlocked ? () => _editAdRatio() : null,
+                    ),
+                  ],
+                ),
+
+                // ── Daily Reset ──
+                CupertinoListSection.insetGrouped(
+                  backgroundColor: Colors.black,
+                  decoration: BoxDecoration(color: const Color(0xFF1C1C1E), borderRadius: BorderRadius.circular(12)),
+                  header: const Text('DAILY RESET', style: TextStyle(color: Colors.white54)),
+                  footer: Text('Screen time & bonus reset at ${_resetHour.toString().padLeft(2, '0')}:00 each day', style: const TextStyle(color: Colors.white38, fontSize: 12)),
+                  children: [
+                    CupertinoListTile(
+                      backgroundColor: const Color(0xFF1C1C1E),
+                      leading: const Icon(CupertinoIcons.moon_fill, color: Color(0xFF0A84FF), size: 22),
+                      title: const Text('Reset Time', style: TextStyle(color: Colors.white)),
+                      additionalInfo: Text('${_resetHour.toString().padLeft(2, '0')}:00', style: const TextStyle(color: Colors.white70)),
+                      trailing: _isUnlocked ? const CupertinoListTileChevron() : null,
+                      onTap: _isUnlocked ? () => _editResetHour() : null,
                     ),
                   ],
                 ),
@@ -674,6 +695,63 @@ class _SettingsScreenState extends State<SettingsScreen> {
             },
           ),
         ],
+      ),
+    );
+  }
+
+  void _editResetHour() {
+    int tempHour = _resetHour;
+    showCupertinoModalPopup(
+      context: context,
+      builder: (_) => Container(
+        height: 300,
+        decoration: const BoxDecoration(
+          color: Color(0xFF1C1C1E),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  CupertinoButton(
+                    padding: EdgeInsets.zero,
+                    child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                  const Text('Daily Reset Hour', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                  CupertinoButton(
+                    padding: EdgeInsets.zero,
+                    child: const Text('Save', style: TextStyle(color: Color(0xFF0A84FF), fontWeight: FontWeight.bold)),
+                    onPressed: () async {
+                      setState(() => _resetHour = tempHour);
+                      await _storage.saveResetHour(tempHour);
+                      if (context.mounted) Navigator.pop(context);
+                    },
+                  ),
+                ],
+              ),
+            ),
+            const Divider(color: Colors.white12, height: 1),
+            const SizedBox(height: 4),
+            const Text('Hour (0-23)', style: TextStyle(color: Colors.white54, fontSize: 13)),
+            Expanded(
+              child: CupertinoPicker(
+                itemExtent: 40,
+                onSelectedItemChanged: (i) => tempHour = i,
+                scrollController: FixedExtentScrollController(initialItem: tempHour),
+                children: List.generate(24, (h) => Center(
+                  child: Text(
+                    '${h.toString().padLeft(2, '0')}:00',
+                    style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w500),
+                  ),
+                )),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

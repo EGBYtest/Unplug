@@ -113,7 +113,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
     if (!mounted) return;
 
-    final today = StorageService.dayKey(DateTime.now());
+    final today = _storage.dayKey(DateTime.now());
     await _storage.saveDailyEntry(today, total);
 
     if (!mounted) return;
