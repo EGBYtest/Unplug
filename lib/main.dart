@@ -6,17 +6,19 @@ import 'home_screen.dart';
 import 'onboarding_screen.dart';
 import 'services/storage_service.dart';
 import 'services/app_closure_handler.dart';
+import 'services/update_checker.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   await StorageService().init();
   await _trackInstall();
+  UpdateChecker.initCheck();
 
   runApp(const UnplugApp());
 }
 
-const _appVersion = '1.4.1+8';
+const _appVersion = '1.5.0+9';
 
 Future<void> _trackInstall() async {
   final storage = StorageService();
