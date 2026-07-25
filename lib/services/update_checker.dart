@@ -15,7 +15,7 @@ class UpdateInfo {
 
 class UpdateChecker {
   static const _githubApi = 'https://api.github.com/repos/EGBYtest/Unplug/releases/latest';
-  static const _currentVersion = '1.5.0';
+  static const _currentVersion = '1.5.1';
 
   static UpdateInfo? cachedUpdate;
 
