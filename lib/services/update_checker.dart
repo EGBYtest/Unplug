@@ -15,7 +15,8 @@ class UpdateInfo {
 
 class UpdateChecker {
   static const _githubApi = 'https://api.github.com/repos/EGBYtest/Unplug/releases/latest';
-  static const _currentVersion = '1.5.1';
+  static const _githubFallback = 'https://raw.githubusercontent.com/EGBYtest/Unplug/main/VERSION';
+  static const _currentVersion = '1.6.0';
 
   static UpdateInfo? cachedUpdate;
 
@@ -24,55 +25,71 @@ class UpdateChecker {
   }
 
   static Future<UpdateInfo> check() async {
+    final result = await _tryFetch(_githubApi, _parseReleaseJson);
+    if (result != null) return result;
+
+    print('UpdateChecker: primary failed, trying fallback...');
+    final fallback = await _tryFetch(_githubFallback, _parseVersionFile);
+    if (fallback != null) return fallback;
+
+    return _noUpdate();
+  }
+
+  static Future<UpdateInfo?> _tryFetch(
+    String url,
+    String? Function(String body) parser,
+  ) async {
     try {
       final client = HttpClient();
       client.connectionTimeout = const Duration(seconds: 5);
-      client.userAgent = 'Unplug/1.5.0';
+      client.userAgent = 'Unplug/1.6.0';
 
-      final request = await client.getUrl(Uri.parse(_githubApi));
+      final request = await client.getUrl(Uri.parse(url));
       final response = await request.close();
 
-      print('UpdateChecker: HTTP ${response.statusCode}');
+      print('UpdateChecker: HTTP ${response.statusCode} from $url');
 
       if (response.statusCode != 200) {
         client.close();
-        return _noUpdate();
+        return null;
       }
 
       final body = await response.transform(utf8.decoder).join();
       client.close();
 
-      final data = jsonDecode(body) as Map<String, dynamic>;
-      final tagName = data['tag_name'] as String? ?? '';
-      final latestVersion = tagName.replaceFirst('v', '');
+      final latestVersion = parser(body);
+      if (latestVersion == null) return null;
 
       print('UpdateChecker: latest=$latestVersion current=$_currentVersion');
 
       if (latestVersion.isEmpty || latestVersion == _currentVersion) {
-        return _noUpdate();
-      }
-
-      final assets = data['assets'] as List<dynamic>? ?? [];
-      String downloadUrl = data['html_url'] as String? ?? '';
-      if (assets.isNotEmpty) {
-        final first = assets.first as Map<String, dynamic>;
-        downloadUrl = first['browser_download_url'] as String? ?? downloadUrl;
+        return null;
       }
 
       if (_compareVersions(latestVersion, _currentVersion) > 0) {
         print('UpdateChecker: update available v$latestVersion');
         return UpdateInfo(
           latestVersion: latestVersion,
-          downloadUrl: downloadUrl,
+          downloadUrl: 'https://github.com/EGBYtest/Unplug/releases/tag/v$latestVersion',
           isAvailable: true,
         );
       }
 
-      return _noUpdate();
-    } catch (e, stack) {
-      print('UpdateChecker: error $e\n$stack');
-      return _noUpdate();
+      return null;
+    } catch (e, _) {
+      print('UpdateChecker: $url error $e');
+      return null;
     }
+  }
+
+  static String? _parseReleaseJson(String body) {
+    final data = jsonDecode(body) as Map<String, dynamic>;
+    final tagName = data['tag_name'] as String? ?? '';
+    return tagName.replaceFirst('v', '');
+  }
+
+  static String? _parseVersionFile(String body) {
+    return body.trim().isEmpty ? null : body.trim();
   }
 
   static UpdateInfo _noUpdate() => const UpdateInfo(
