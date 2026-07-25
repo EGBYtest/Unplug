@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:usage_stats/usage_stats.dart';
 import '../models/app_group.dart';
 import 'app_closure_handler.dart';
+import 'storage_service.dart';
 
 class UsageTracker {
   static final UsageTracker _instance = UsageTracker._internal();
@@ -44,12 +45,13 @@ class UsageTracker {
     }
   }
 
-  /// Returns usage time in minutes for a specific package today (reset at 03:00).
+  /// Returns usage time in minutes for a specific package today (reset hour configurable).
   Future<int> getUsageTime(String packageName) async {
+    final h = StorageService().resetHour;
     final endDate = DateTime.now();
-    final startDate = endDate.hour < 3
-        ? DateTime(endDate.year, endDate.month, endDate.day - 1, 3)
-        : DateTime(endDate.year, endDate.month, endDate.day, 3);
+    final startDate = endDate.hour < h
+        ? DateTime(endDate.year, endDate.month, endDate.day - 1, h)
+        : DateTime(endDate.year, endDate.month, endDate.day, h);
 
     List<UsageInfo> usageStats = await UsageStats.queryUsageStats(startDate, endDate);
     for (var info in usageStats) {
