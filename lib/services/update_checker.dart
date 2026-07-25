@@ -16,7 +16,9 @@ class UpdateInfo {
 class UpdateChecker {
   static const _githubApi = 'https://api.github.com/repos/EGBYtest/Unplug/releases/latest';
   static const _githubFallback = 'https://raw.githubusercontent.com/EGBYtest/Unplug/main/VERSION';
+  static const _counterApi = 'https://api.counterapi.dev/v1/unplug/version_build/';
   static const _currentVersion = '1.6.1';
+  static const _currentBuild = 12;
 
   static UpdateInfo? cachedUpdate;
 
@@ -28,9 +30,13 @@ class UpdateChecker {
     final result = await _tryFetch(_githubApi, _parseReleaseJson);
     if (result != null) return result;
 
-    print('UpdateChecker: primary failed, trying fallback...');
+    print('UpdateChecker: github API failed, trying raw fallback...');
     final fallback = await _tryFetch(_githubFallback, _parseVersionFile);
     if (fallback != null) return fallback;
+
+    print('UpdateChecker: raw fallback failed, trying counter fallback...');
+    final counter = await _tryFetchCounter();
+    if (counter != null) return counter;
 
     return _noUpdate();
   }
@@ -42,7 +48,7 @@ class UpdateChecker {
     try {
       final client = HttpClient();
       client.connectionTimeout = const Duration(seconds: 5);
-      client.userAgent = 'Unplug/1.6.0';
+      client.userAgent = 'Unplug/1.6.1';
 
       final request = await client.getUrl(Uri.parse(url));
       final response = await request.close();
@@ -78,6 +84,46 @@ class UpdateChecker {
       return null;
     } catch (e, _) {
       print('UpdateChecker: $url error $e');
+      return null;
+    }
+  }
+
+  static Future<UpdateInfo?> _tryFetchCounter() async {
+    try {
+      final client = HttpClient();
+      client.connectionTimeout = const Duration(seconds: 5);
+      client.userAgent = 'Unplug/1.6.1';
+
+      final request = await client.getUrl(Uri.parse(_counterApi));
+      final response = await request.close();
+
+      print('UpdateChecker: HTTP ${response.statusCode} from $_counterApi');
+
+      if (response.statusCode != 200) {
+        client.close();
+        return null;
+      }
+
+      final body = await response.transform(utf8.decoder).join();
+      client.close();
+
+      final data = jsonDecode(body) as Map<String, dynamic>;
+      final latestBuild = data['count'] as int? ?? 0;
+
+      print('UpdateChecker: counter latestBuild=$latestBuild current=$_currentBuild');
+
+      if (latestBuild > _currentBuild) {
+        print('UpdateChecker: update available (build $latestBuild)');
+        return UpdateInfo(
+          latestVersion: '${latestBuild}',
+          downloadUrl: 'https://github.com/EGBYtest/Unplug/releases/latest',
+          isAvailable: true,
+        );
+      }
+
+      return null;
+    } catch (e, _) {
+      print('UpdateChecker: $_counterApi error $e');
       return null;
     }
   }
