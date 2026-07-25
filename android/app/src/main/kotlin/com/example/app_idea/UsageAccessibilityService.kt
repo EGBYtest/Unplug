@@ -180,7 +180,7 @@ class UsageAccessibilityService : AccessibilityService() {
             if (totalLimit == 0) { blockApp(pkg, groupName); return }
 
             val usm = getSystemService(USAGE_STATS_SERVICE) as UsageStatsManager
-            val resetHour = prefs.getFlutterInt("flutter.reset_hour", 3)
+            val resetHour = prefs.getFlutterInt("flutter.reset_hour", 2)
             val cal = Calendar.getInstance().apply {
                 if (get(Calendar.HOUR_OF_DAY) < resetHour) add(Calendar.DAY_OF_MONTH, -1)
                 set(Calendar.HOUR_OF_DAY, resetHour); set(Calendar.MINUTE, 0)
@@ -451,7 +451,7 @@ class UsageAccessibilityService : AccessibilityService() {
         return try {
             val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
             val usm = getSystemService(USAGE_STATS_SERVICE) as UsageStatsManager
-            val resetHour = prefs.getFlutterInt("flutter.reset_hour", 3)
+            val resetHour = prefs.getFlutterInt("flutter.reset_hour", 2)
             val cal = Calendar.getInstance().apply {
                 if (get(Calendar.HOUR_OF_DAY) < resetHour) add(Calendar.DAY_OF_MONTH, -1)
                 set(Calendar.HOUR_OF_DAY, resetHour); set(Calendar.MINUTE, 0)

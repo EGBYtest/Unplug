@@ -13,10 +13,10 @@ class StorageService {
 
   SharedPreferences? _prefs;
 
-  int get resetHour => _prefs?.getInt('reset_hour') ?? 3;
+  int get resetHour => _prefs?.getInt('reset_hour') ?? 2;
 
   Future<void> saveResetHour(int hour) async {
-    await _prefs?.setInt('reset_hour', hour);
+    await _prefs?.setInt('reset_hour', (hour ~/ 2) * 2);
   }
 
   DateTime _dayStart(DateTime dt) {

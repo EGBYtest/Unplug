@@ -444,7 +444,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   backgroundColor: Colors.black,
                   decoration: BoxDecoration(color: const Color(0xFF1C1C1E), borderRadius: BorderRadius.circular(12)),
                   header: const Text('DAILY RESET', style: TextStyle(color: Colors.white54)),
-                  footer: Text('Screen time & bonus reset at ${_resetHour.toString().padLeft(2, '0')}:00 each day', style: const TextStyle(color: Colors.white38, fontSize: 12)),
+                      footer: Text('Resets at ${_resetHour.toString().padLeft(2, '0')}:00 each day. Even hours only — aligns with Android usage data buckets.', style: const TextStyle(color: Colors.white38, fontSize: 12)),
                   children: [
                     CupertinoListTile(
                       backgroundColor: const Color(0xFF1C1C1E),
@@ -499,7 +499,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       backgroundColor: const Color(0xFF1C1C1E),
                       leading: const Icon(CupertinoIcons.info_circle_fill, color: Colors.white38, size: 22),
                       title: const Text('Version', style: TextStyle(color: Colors.white)),
-                      additionalInfo: const Text('1.7.3 (Beta)', style: TextStyle(color: Colors.white54)),
+                      additionalInfo: const Text('1.7.4 (Beta)', style: TextStyle(color: Colors.white54)),
                     ),
                   ],
                 ),
@@ -736,15 +736,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             const Divider(color: Colors.white12, height: 1),
             const SizedBox(height: 4),
-            const Text('Hour (0-23)', style: TextStyle(color: Colors.white54, fontSize: 13)),
+            const Text('Hour (0, 2, 4... 22)', style: TextStyle(color: Colors.white54, fontSize: 13)),
             Expanded(
               child: CupertinoPicker(
                 itemExtent: 40,
-                onSelectedItemChanged: (i) => tempHour = i,
-                scrollController: FixedExtentScrollController(initialItem: tempHour),
-                children: List.generate(24, (h) => Center(
+                onSelectedItemChanged: (i) => tempHour = i * 2,
+                scrollController: FixedExtentScrollController(initialItem: tempHour ~/ 2),
+                children: List.generate(12, (i) => Center(
                   child: Text(
-                    '${h.toString().padLeft(2, '0')}:00',
+                    '${(i * 2).toString().padLeft(2, '0')}:00',
                     style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w500),
                   ),
                 )),
