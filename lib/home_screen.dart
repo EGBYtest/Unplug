@@ -43,7 +43,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _checkUpdate() async {
-    final info = await UpdateChecker.check();
+    var info = UpdateChecker.cachedUpdate;
+    if (info == null) {
+      info = await UpdateChecker.check();
+    }
     if (mounted && info.isAvailable) {
       setState(() => _updateInfo = info);
     }
