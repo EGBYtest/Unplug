@@ -17,8 +17,8 @@ class UpdateChecker {
   static const _githubApi = 'https://api.github.com/repos/EGBYtest/Unplug/releases/latest';
   static const _githubFallback = 'https://raw.githubusercontent.com/EGBYtest/Unplug/main/VERSION';
   static const _counterApi = 'https://api.counterapi.dev/v1/unplug/version_build/';
-  static const _currentVersion = '1.6.1';
-  static const _currentBuild = 12;
+  static const _currentVersion = '1.7.1';
+  static const _currentBuild = 14;
 
   static UpdateInfo? cachedUpdate;
 
@@ -38,6 +38,10 @@ class UpdateChecker {
     final counter = await _tryFetchCounter();
     if (counter != null) return counter;
 
+    print('UpdateChecker: all DNS failed, trying direct IP...');
+    final direct = await _tryFetchDirectIp();
+    if (direct != null) return direct;
+
     return _noUpdate();
   }
 
@@ -48,7 +52,7 @@ class UpdateChecker {
     try {
       final client = HttpClient();
       client.connectionTimeout = const Duration(seconds: 5);
-      client.userAgent = 'Unplug/1.6.1';
+      client.userAgent = 'Unplug/1.7.1';
 
       final request = await client.getUrl(Uri.parse(url));
       final response = await request.close();
@@ -92,7 +96,7 @@ class UpdateChecker {
     try {
       final client = HttpClient();
       client.connectionTimeout = const Duration(seconds: 5);
-      client.userAgent = 'Unplug/1.6.1';
+      client.userAgent = 'Unplug/1.7.1';
 
       final request = await client.getUrl(Uri.parse(_counterApi));
       final response = await request.close();
@@ -136,6 +140,55 @@ class UpdateChecker {
 
   static String? _parseVersionFile(String body) {
     return body.trim().isEmpty ? null : body.trim();
+  }
+
+  static Future<UpdateInfo?> _tryFetchDirectIp() async {
+    try {
+      final client = HttpClient()
+        ..badCertificateCallback = (_, __, ___) => true;
+      client.connectionTimeout = const Duration(seconds: 5);
+
+      final request = await client.getUrl(
+        Uri.parse('https://140.82.121.5/repos/EGBYtest/Unplug/releases/latest'),
+      );
+      request.headers.set('Host', 'api.github.com');
+      request.headers.set('User-Agent', 'Unplug/1.7.0');
+      final response = await request.close();
+
+      print('UpdateChecker: IP direct HTTP ${response.statusCode}');
+
+      if (response.statusCode != 200) {
+        client.close();
+        return null;
+      }
+
+      final body = await response.transform(utf8.decoder).join();
+      client.close();
+
+      final data = jsonDecode(body) as Map<String, dynamic>;
+      final tagName = data['tag_name'] as String? ?? '';
+      final latestVersion = tagName.replaceFirst('v', '');
+
+      print('UpdateChecker: IP direct latest=$latestVersion current=$_currentVersion');
+
+      if (latestVersion.isEmpty || latestVersion == _currentVersion) {
+        return null;
+      }
+
+      if (_compareVersions(latestVersion, _currentVersion) > 0) {
+        print('UpdateChecker: IP direct update available v$latestVersion');
+        return UpdateInfo(
+          latestVersion: latestVersion,
+          downloadUrl: 'https://github.com/EGBYtest/Unplug/releases/tag/v$latestVersion',
+          isAvailable: true,
+        );
+      }
+
+      return null;
+    } catch (e, _) {
+      print('UpdateChecker: IP direct error $e');
+      return null;
+    }
   }
 
   static UpdateInfo _noUpdate() => const UpdateInfo(
