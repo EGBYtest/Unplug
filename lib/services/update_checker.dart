@@ -1,6 +1,6 @@
 import 'dart:convert';
-import 'dart:developer';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 
 class UpdateInfo {
   final String latestVersion;
@@ -16,18 +16,18 @@ class UpdateInfo {
 
 class UpdateChecker {
   static const _githubApi = 'https://api.github.com/repos/EGBYtest/Unplug/releases/latest';
-  static const _currentVersion = '1.3.3';
+  static const _currentVersion = '1.4.0';
 
   static Future<UpdateInfo> check() async {
     try {
       final client = HttpClient();
       client.connectionTimeout = const Duration(seconds: 5);
-      client.userAgent = 'Unplug/1.3.3';
+      client.userAgent = 'Unplug/1.4.0';
 
       final request = await client.getUrl(Uri.parse(_githubApi));
       final response = await request.close();
 
-      log('UpdateChecker: HTTP ${response.statusCode}', name: 'UpdateChecker');
+      debugPrint('UpdateChecker: HTTP ${response.statusCode}');
 
       if (response.statusCode != 200) {
         client.close();
@@ -41,7 +41,7 @@ class UpdateChecker {
       final tagName = data['tag_name'] as String? ?? '';
       final latestVersion = tagName.replaceFirst('v', '');
 
-      log('UpdateChecker: latest=$latestVersion current=$_currentVersion', name: 'UpdateChecker');
+      debugPrint('UpdateChecker: latest=$latestVersion current=$_currentVersion');
 
       if (latestVersion.isEmpty || latestVersion == _currentVersion) {
         return _noUpdate();
@@ -55,7 +55,7 @@ class UpdateChecker {
       }
 
       if (_compareVersions(latestVersion, _currentVersion) > 0) {
-        log('UpdateChecker: update available v$latestVersion', name: 'UpdateChecker');
+        debugPrint('UpdateChecker: update available v$latestVersion');
         return UpdateInfo(
           latestVersion: latestVersion,
           downloadUrl: downloadUrl,
@@ -65,7 +65,7 @@ class UpdateChecker {
 
       return _noUpdate();
     } catch (e, stack) {
-      log('UpdateChecker: error $e', name: 'UpdateChecker', error: e, stackTrace: stack);
+      debugPrint('UpdateChecker: error $e\n$stack');
       return _noUpdate();
     }
   }

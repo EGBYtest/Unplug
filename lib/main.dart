@@ -16,7 +16,7 @@ void main() async {
   runApp(const UnplugApp());
 }
 
-const _appVersion = '1.3.3+6';
+const _appVersion = '1.4.0+7';
 
 Future<void> _trackInstall() async {
   final storage = StorageService();
