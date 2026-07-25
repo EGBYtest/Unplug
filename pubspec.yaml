@@ -1,7 +1,7 @@
 name: unplug
 description: Focus-first screen time management app. Block short-form content tabs without killing the app.
 publish_to: 'none'
-version: 1.7.2+15
+version: 1.7.3+16
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
