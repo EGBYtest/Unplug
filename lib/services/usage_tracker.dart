@@ -52,6 +52,7 @@ class UsageTracker {
     final startDate = endDate.hour < h
         ? DateTime(endDate.year, endDate.month, endDate.day - 1, h)
         : DateTime(endDate.year, endDate.month, endDate.day, h);
+    print('UsageTracker: $packageName start=${startDate.toIso8601String()} end=${endDate.toIso8601String()} resetHour=$h');
 
     List<UsageInfo> usageStats = await UsageStats.queryUsageStats(startDate, endDate);
     for (var info in usageStats) {
