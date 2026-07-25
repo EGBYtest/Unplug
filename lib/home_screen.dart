@@ -40,6 +40,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _refreshTimer = Timer.periodic(const Duration(seconds: 60), (_) => _loadUsage());
     WidgetsBinding.instance.addPostFrameCallback((_) => _checkPermissionsOnStart());
     _checkUpdate();
+    Timer.periodic(const Duration(minutes: 10), (_) {
+      UpdateChecker.cachedUpdate = null;
+      _checkUpdate();
+    });
   }
 
   Future<void> _checkUpdate() async {
@@ -101,7 +105,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   // Reload usage when app comes back to foreground
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) _loadUsage();
+    if (state == AppLifecycleState.resumed) {
+      _loadUsage();
+      UpdateChecker.cachedUpdate = null;
+      _checkUpdate();
+    }
   }
 
   Future<void> _loadUsage() async {
