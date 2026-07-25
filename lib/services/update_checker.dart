@@ -16,7 +16,7 @@ class UpdateInfo {
 class UpdateChecker {
   static const _githubApi = 'https://api.github.com/repos/EGBYtest/Unplug/releases/latest';
   static const _githubFallback = 'https://raw.githubusercontent.com/EGBYtest/Unplug/main/VERSION';
-  static const _currentVersion = '1.6.0';
+  static const _currentVersion = '1.6.1';
 
   static UpdateInfo? cachedUpdate;
 
