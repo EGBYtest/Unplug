@@ -8,8 +8,22 @@ import android.content.Context
 import android.app.ActivityManager
 import android.app.usage.UsageStatsManager
 import android.util.Log
+import android.content.SharedPreferences
 import org.json.JSONArray
 import java.util.Calendar
+
+private fun SharedPreferences.getFlutterInt(key: String, default: Int): Int {
+    return try {
+        val value = all[key] ?: return default
+        when (value) {
+            is Long -> value.toInt()
+            is Int -> value
+            else -> default
+        }
+    } catch (_: Exception) {
+        default
+    }
+}
 
 class UsageAccessibilityService : AccessibilityService() {
 
@@ -25,6 +39,9 @@ class UsageAccessibilityService : AccessibilityService() {
 
             val pkg = event.packageName?.toString()?.trim() ?: return
             if (pkg == packageName || pkg.startsWith("com.android.") || pkg.startsWith("com.systemui")) return
+
+            Log.i(TAG, "event: $pkg")
+
 
             // Throttle events per package to 200ms for smooth performance without missing tab/content changes
             val now = System.currentTimeMillis()
@@ -62,7 +79,7 @@ class UsageAccessibilityService : AccessibilityService() {
                         if (pattern.isNotEmpty()) {
                             try {
                                 if (className.matches(Regex(pattern, RegexOption.IGNORE_CASE))) {
-                                    Log.d(TAG, "global ban (activity): $banName in $pkg")
+                                    Log.i(TAG, "global ban (activity): $banName in $pkg")
                                     blockApp(pkg, "In-App Feature", banName)
                                     return
                                 }
@@ -81,7 +98,7 @@ class UsageAccessibilityService : AccessibilityService() {
                             }
 
                             if (keywordList.isNotEmpty() && scanForContentKeywords(pkg, keywordList)) {
-                                Log.d(TAG, "global ban (content match!): $banName in $pkg — keywords=$keywordList")
+                                Log.i(TAG, "global ban (content match!): $banName in $pkg — keywords=$keywordList")
                                 blockApp(pkg, "In-App Feature", banName)
                                 return
                             }
@@ -129,7 +146,7 @@ class UsageAccessibilityService : AccessibilityService() {
                         if (pattern.isNotEmpty()) {
                             try {
                                 if (className.matches(Regex(pattern, RegexOption.IGNORE_CASE))) {
-                                    Log.d(TAG, "ban (activity): $banName in $pkg")
+                                    Log.i(TAG, "ban (activity): $banName in $pkg")
                                     blockApp(pkg, groupName, banName)
                                     return
                                 }
@@ -148,7 +165,7 @@ class UsageAccessibilityService : AccessibilityService() {
                             }
 
                             if (keywordList.isNotEmpty() && scanForContentKeywords(pkg, keywordList)) {
-                                Log.d(TAG, "ban (content match!): $banName in $pkg — keywords=$keywordList")
+                                Log.i(TAG, "ban (content match!): $banName in $pkg — keywords=$keywordList")
                                 blockApp(pkg, groupName, banName)
                                 return
                             }
@@ -158,12 +175,12 @@ class UsageAccessibilityService : AccessibilityService() {
             }
 
             // Check time limit
-            val bonus = prefs.getInt("flutter.bonus_seconds_$groupName", 0)
+            val bonus = prefs.getFlutterInt("flutter.bonus_seconds_$groupName", 0)
             val totalLimit = limit + (bonus / 60)
             if (totalLimit == 0) { blockApp(pkg, groupName); return }
 
             val usm = getSystemService(USAGE_STATS_SERVICE) as UsageStatsManager
-            val resetHour = prefs.getInt("flutter.reset_hour", 3)
+            val resetHour = prefs.getFlutterInt("flutter.reset_hour", 3)
             val cal = Calendar.getInstance().apply {
                 if (get(Calendar.HOUR_OF_DAY) < resetHour) add(Calendar.DAY_OF_MONTH, -1)
                 set(Calendar.HOUR_OF_DAY, resetHour); set(Calendar.MINUTE, 0)
@@ -181,8 +198,10 @@ class UsageAccessibilityService : AccessibilityService() {
                 }
             }
             if (totalMs / 60000 >= totalLimit) {
-                Log.d(TAG, "block $pkg ($groupName): ${totalMs/60000}m >= ${totalLimit}m")
+                Log.i(TAG, "block $pkg ($groupName): ${totalMs/60000}m >= ${totalLimit}m")
                 blockApp(pkg, groupName)
+            } else {
+                Log.i(TAG, "ok $pkg ($groupName): ${totalMs/60000}m / ${totalLimit}m (bonus=${bonus}s, resetHour=$resetHour)")
             }
             return
         }
@@ -213,7 +232,7 @@ class UsageAccessibilityService : AccessibilityService() {
                 }
             }
         } catch (e: Exception) {
-            Log.d(TAG, "scanForContentKeywords error: ${e.message}")
+            Log.i(TAG, "scanForContentKeywords error: ${e.message}")
         }
         return false
     }
@@ -245,13 +264,13 @@ class UsageAccessibilityService : AccessibilityService() {
                 // Check view ID resource name — skip clickable/focusable nodes
                 // (tabs/buttons) whose IDs happen to contain a keyword.
                 if (!isClickable && !isFocusable && nodeViewId.isNotEmpty() && nodeViewId.contains(kw)) {
-                    Log.d(TAG, "Matched viewId: '$kw' in '$nodeViewId'")
+                    Log.i(TAG, "Matched viewId: '$kw' in '$nodeViewId'")
                     return true
                 }
 
                 // Check class name (e.g. com.google.android.apps.youtube.app.extensions.reel...)
                 if (nodeClass.isNotEmpty() && nodeClass.contains(kw)) {
-                    Log.d(TAG, "Matched className: '$kw' in '$nodeClass'")
+                    Log.i(TAG, "Matched className: '$kw' in '$nodeClass'")
                     return true
                 }
 
@@ -259,7 +278,7 @@ class UsageAccessibilityService : AccessibilityService() {
                 // and edge-positioned elements (bottom nav labels, action bar titles).
                 if (!isClickable && !isFocusable && !isEdgeUi) {
                     if ((nodeText.isNotEmpty() && nodeText.contains(kw)) || (nodeDesc.isNotEmpty() && nodeDesc.contains(kw))) {
-                        Log.d(TAG, "Matched text/desc: '$kw' (text='$nodeText', desc='$nodeDesc')")
+                        Log.i(TAG, "Matched text/desc: '$kw' (text='$nodeText', desc='$nodeDesc')")
                         return true
                     }
                 }
@@ -345,7 +364,7 @@ class UsageAccessibilityService : AccessibilityService() {
         blockCount[pkg] = longArrayOf(count.toLong(), if (count == 1) now else entry!![1])
         val aggressive = count >= 3
 
-        if (aggressive) Log.d(TAG, "aggressive block #$count for $pkg")
+        if (aggressive) Log.i(TAG, "aggressive block #$count for $pkg")
 
         // Immediately execute BACK global action to exit the feature/view
         performGlobalAction(GLOBAL_ACTION_BACK)
@@ -368,10 +387,10 @@ class UsageAccessibilityService : AccessibilityService() {
             val am = getSystemService(ACTIVITY_SERVICE) as ActivityManager
             try {
                 am::class.java.getMethod("forceStopPackage", String::class.java).invoke(am, pkg)
-                Log.d(TAG, "forceStop $pkg")
+                Log.i(TAG, "forceStop $pkg")
             } catch (_: Exception) {
                 am.killBackgroundProcesses(pkg)
-                Log.d(TAG, "killBg $pkg")
+                Log.i(TAG, "killBg $pkg")
                 try {
                     for (p in (am.runningAppProcesses ?: emptyList())) {
                         if (p.processName == pkg) android.os.Process.killProcess(p.pid)
@@ -420,7 +439,7 @@ class UsageAccessibilityService : AccessibilityService() {
                 val p = root.packageName?.toString()?.trim() ?: continue
                 val pair = pkgToGroup[p] ?: continue
                 val (name, limit) = pair
-                val bonus = prefs.getInt("flutter.bonus_seconds_$name", 0)
+                val bonus = prefs.getFlutterInt("flutter.bonus_seconds_$name", 0)
                 if (limit + (bonus / 60) == 0 || getUsageMinutesForGroup(name, p) >= (limit + (bonus / 60))) {
                     blockApp(p, name); return
                 }
@@ -432,7 +451,7 @@ class UsageAccessibilityService : AccessibilityService() {
         return try {
             val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
             val usm = getSystemService(USAGE_STATS_SERVICE) as UsageStatsManager
-            val resetHour = prefs.getInt("flutter.reset_hour", 3)
+            val resetHour = prefs.getFlutterInt("flutter.reset_hour", 3)
             val cal = Calendar.getInstance().apply {
                 if (get(Calendar.HOUR_OF_DAY) < resetHour) add(Calendar.DAY_OF_MONTH, -1)
                 set(Calendar.HOUR_OF_DAY, resetHour); set(Calendar.MINUTE, 0)
