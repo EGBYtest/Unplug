@@ -16,13 +16,13 @@ class UpdateInfo {
 
 class UpdateChecker {
   static const _githubApi = 'https://api.github.com/repos/EGBYtest/Unplug/releases/latest';
-  static const _currentVersion = '1.3.2';
+  static const _currentVersion = '1.3.3';
 
   static Future<UpdateInfo> check() async {
     try {
       final client = HttpClient();
       client.connectionTimeout = const Duration(seconds: 5);
-      client.userAgent = 'Unplug/1.3.2';
+      client.userAgent = 'Unplug/1.3.3';
 
       final request = await client.getUrl(Uri.parse(_githubApi));
       final response = await request.close();
