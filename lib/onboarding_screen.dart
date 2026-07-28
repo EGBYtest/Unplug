@@ -14,6 +14,7 @@ class OnboardingScreen extends StatefulWidget {
 class _OnboardingScreenState extends State<OnboardingScreen> with WidgetsBindingObserver {
   bool _hasUsageAccess = false;
   bool _hasAccessibility = false;
+  bool _hasOverlay = false;
   bool _isChecking = false;
   String? _manufacturer;
 
@@ -48,10 +49,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> with WidgetsBinding
     setState(() => _isChecking = true);
     final usageAccess = await AppClosureHandler().hasUsageAccess();
     final accessibility = await AppClosureHandler().hasAccessibilityEnabled();
+    final overlay = await AppClosureHandler().hasOverlayPermission();
     if (!mounted) return;
     setState(() {
       _hasUsageAccess = usageAccess;
       _hasAccessibility = accessibility;
+      _hasOverlay = overlay;
       _isChecking = false;
     });
   }
@@ -123,7 +126,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> with WidgetsBinding
 
   @override
   Widget build(BuildContext context) {
-    final allGranted = _hasUsageAccess && _hasAccessibility;
+    final allGranted = _hasUsageAccess && _hasAccessibility && _hasOverlay;
     final extraWarning = _getExtraWarnings();
 
     return CupertinoPageScaffold(
@@ -281,6 +284,15 @@ class _OnboardingScreenState extends State<OnboardingScreen> with WidgetsBinding
                 isGranted: _hasAccessibility,
                 onTap: () async {
                   await AppClosureHandler().openAccessibilitySettings();
+                },
+              ),
+              _PermissionCard(
+                icon: CupertinoIcons.rectangle_stack_fill,
+                title: 'Display Over Other Apps',
+                description: 'Required to show the lock screen instantly on top of blocked apps without switching away.',
+                isGranted: _hasOverlay,
+                onTap: () async {
+                  await AppClosureHandler().requestOverlayPermission();
                 },
               ),
 

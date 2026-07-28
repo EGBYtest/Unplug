@@ -358,7 +358,6 @@ class UsageAccessibilityService : AccessibilityService() {
     private fun blockApp(pkg: String, group: String, feature: String? = null) {
         val now = System.currentTimeMillis()
 
-        // Track rapid re-blocks within 5s window
         val entry = blockCount[pkg]
         val count = if (entry != null && now - entry[1] < 5000) entry[0].toInt() + 1 else 1
         blockCount[pkg] = longArrayOf(count.toLong(), if (count == 1) now else entry!![1])
@@ -366,13 +365,10 @@ class UsageAccessibilityService : AccessibilityService() {
 
         if (aggressive) Log.i(TAG, "aggressive block #$count for $pkg")
 
-        // Immediately execute BACK global action to exit the feature/view
         performGlobalAction(GLOBAL_ACTION_BACK)
 
         if (feature != null) {
-            // In-app feature block: only dismiss the feature, keep the app alive
             if (aggressive) {
-                // User keeps returning to blocked feature — go home instead
                 val home = Intent(Intent.ACTION_MAIN).apply {
                     addCategory(Intent.CATEGORY_HOME)
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK
@@ -382,39 +378,24 @@ class UsageAccessibilityService : AccessibilityService() {
             return
         }
 
-        // Kill app (time-limit block only)
-        try {
-            val am = getSystemService(ACTIVITY_SERVICE) as ActivityManager
-            try {
-                am::class.java.getMethod("forceStopPackage", String::class.java).invoke(am, pkg)
-                Log.i(TAG, "forceStop $pkg")
-            } catch (_: Exception) {
-                am.killBackgroundProcesses(pkg)
-                Log.i(TAG, "killBg $pkg")
-                try {
-                    for (p in (am.runningAppProcesses ?: emptyList())) {
-                        if (p.processName == pkg) android.os.Process.killProcess(p.pid)
-                    }
-                } catch (_: Exception) {}
-            }
-        } catch (_: Exception) {}
+        val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+        val hasOverlay = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+            android.provider.Settings.canDrawOverlays(this)
+        } else true
+
+        if (!hasOverlay) {
+            performGlobalAction(GLOBAL_ACTION_HOME)
+        }
 
         if (aggressive) {
             performGlobalAction(GLOBAL_ACTION_RECENTS)
             performGlobalAction(GLOBAL_ACTION_BACK)
-            try { Thread.sleep(200) } catch (_: Exception) {}
-            val home = Intent(Intent.ACTION_MAIN).apply {
-                addCategory(Intent.CATEGORY_HOME)
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
-            }
-            startActivity(home)
-            try { Thread.sleep(100) } catch (_: Exception) {}
         }
 
-        // Show lock screen
         val i = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
             putExtra("SHOW_LOCK_SCREEN_APP_NAME", group)
+            putExtra("SHOW_LOCK_SCREEN_FEATURE_NAME", feature ?: "")
         }
         startActivity(i)
     }
