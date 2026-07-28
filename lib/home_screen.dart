@@ -59,11 +59,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Future<void> _checkPermissionsOnStart() async {
     final hasUsage = await AppClosureHandler().hasUsageAccess();
     final hasAccessibility = await AppClosureHandler().hasAccessibilityEnabled();
+    final hasOverlay = await AppClosureHandler().hasOverlayPermission();
     if (!mounted) return;
-    if (!hasUsage || !hasAccessibility) {
+    if (!hasUsage || !hasAccessibility || !hasOverlay) {
       final missing = [
         if (!hasUsage) 'Usage Access',
         if (!hasAccessibility) 'Accessibility Service',
+        if (!hasOverlay) 'Display Over Other Apps',
       ];
       showCupertinoDialog(
         context: context,

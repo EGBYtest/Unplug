@@ -57,6 +57,22 @@ class AppClosureHandler {
     }
   }
 
+  /// Checks if Display Over Other Apps permission is granted
+  Future<bool> hasOverlayPermission() async {
+    try {
+      return await _channel.invokeMethod('hasOverlayPermission') ?? false;
+    } on PlatformException {
+      return false;
+    }
+  }
+
+  /// Opens overlay permission settings
+  Future<void> requestOverlayPermission() async {
+    try {
+      await _channel.invokeMethod('requestOverlayPermission');
+    } on PlatformException {}
+  }
+
   /// Returns device manufacturer name (e.g. "samsung", "xiaomi", "oneplus")
   Future<String?> getDeviceManufacturer() async {
     try {

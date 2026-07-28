@@ -3,10 +3,11 @@ package com.example.app_idea
 import android.content.Intent
 import android.view.KeyEvent
 import android.view.WindowManager
+import android.os.Build
+import android.provider.Settings
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
-import android.provider.Settings
 import android.content.pm.PackageManager
 import android.content.pm.ApplicationInfo
 
@@ -17,6 +18,16 @@ class MainActivity : FlutterActivity() {
     private var pendingApp: String? = null
     private var pendingFeature: String? = null
     private var lockScreenActive = false
+
+    private fun enableOverlay() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
+            val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION).apply {
+                data = android.net.Uri.parse("package:$packageName")
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            startActivity(intent)
+        }
+    }
 
     override fun configureFlutterEngine(engine: FlutterEngine) {
         super.configureFlutterEngine(engine)
@@ -41,6 +52,13 @@ class MainActivity : FlutterActivity() {
                 "hasAccessibilityEnabled" -> {
                     val our = "$packageName/$packageName.UsageAccessibilityService"
                     result.success((Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: "").split(":").contains(our))
+                }
+                "hasOverlayPermission" -> {
+                    result.success(Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(this))
+                }
+                "requestOverlayPermission" -> {
+                    enableOverlay()
+                    result.success(true)
                 }
                 "getDeviceManufacturer" -> {
                     result.success(android.os.Build.MANUFACTURER)
@@ -73,6 +91,9 @@ class MainActivity : FlutterActivity() {
         lockScreenActive = true
         window.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED)
         window.addFlags(WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && Settings.canDrawOverlays(this)) {
+            window.setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
+        }
 
         // retry method channel up to 3s
         var attempts = 0
