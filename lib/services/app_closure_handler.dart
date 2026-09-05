@@ -70,7 +70,9 @@ class AppClosureHandler {
   Future<void> requestOverlayPermission() async {
     try {
       await _channel.invokeMethod('requestOverlayPermission');
-    } on PlatformException {}
+    } on PlatformException catch (e) {
+      debugPrint("Failed to request overlay permission: '${e.message}'.");
+    }
   }
 
   /// Returns device manufacturer name (e.g. "samsung", "xiaomi", "oneplus")

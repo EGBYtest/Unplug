@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:developer' show log;
 import 'dart:io';
 
 class UpdateInfo {
@@ -17,8 +18,8 @@ class UpdateChecker {
   static const _githubApi = 'https://api.github.com/repos/EGBYtest/Unplug/releases/latest';
   static const _githubFallback = 'https://raw.githubusercontent.com/EGBYtest/Unplug/main/VERSION';
   static const _counterApi = 'https://api.counterapi.dev/v1/unplug/version_build/';
-  static const _currentVersion = '1.8.0';
-  static const _currentBuild = 15;
+  static const _currentVersion = '1.18.2';
+  static const _currentBuild = 19;
 
   static UpdateInfo? cachedUpdate;
 
@@ -30,15 +31,15 @@ class UpdateChecker {
     final result = await _tryFetch(_githubApi, _parseReleaseJson);
     if (result != null) return result;
 
-    print('UpdateChecker: github API failed, trying raw fallback...');
+    log('UpdateChecker: github API failed, trying raw fallback...');
     final fallback = await _tryFetch(_githubFallback, _parseVersionFile);
     if (fallback != null) return fallback;
 
-    print('UpdateChecker: raw fallback failed, trying counter fallback...');
+    log('UpdateChecker: raw fallback failed, trying counter fallback...');
     final counter = await _tryFetchCounter();
     if (counter != null) return counter;
 
-    print('UpdateChecker: all DNS failed, trying direct IP...');
+    log('UpdateChecker: all DNS failed, trying direct IP...');
     final direct = await _tryFetchDirectIp();
     if (direct != null) return direct;
 
@@ -57,7 +58,7 @@ class UpdateChecker {
       final request = await client.getUrl(Uri.parse(url));
       final response = await request.close();
 
-      print('UpdateChecker: HTTP ${response.statusCode} from $url');
+      log('UpdateChecker: HTTP ${response.statusCode} from $url');
 
       if (response.statusCode != 200) {
         client.close();
@@ -70,14 +71,14 @@ class UpdateChecker {
       final latestVersion = parser(body);
       if (latestVersion == null) return null;
 
-      print('UpdateChecker: latest=$latestVersion current=$_currentVersion');
+      log('UpdateChecker: latest=$latestVersion current=$_currentVersion');
 
       if (latestVersion.isEmpty || latestVersion == _currentVersion) {
         return null;
       }
 
       if (_compareVersions(latestVersion, _currentVersion) > 0) {
-        print('UpdateChecker: update available v$latestVersion');
+        log('UpdateChecker: update available v$latestVersion');
         return UpdateInfo(
           latestVersion: latestVersion,
           downloadUrl: 'https://github.com/EGBYtest/Unplug/releases/tag/v$latestVersion',
@@ -86,8 +87,8 @@ class UpdateChecker {
       }
 
       return null;
-    } catch (e, _) {
-      print('UpdateChecker: $url error $e');
+    } catch (e) {
+      log('UpdateChecker: $url error $e');
       return null;
     }
   }
@@ -101,7 +102,7 @@ class UpdateChecker {
       final request = await client.getUrl(Uri.parse(_counterApi));
       final response = await request.close();
 
-      print('UpdateChecker: HTTP ${response.statusCode} from $_counterApi');
+      log('UpdateChecker: HTTP ${response.statusCode} from $_counterApi');
 
       if (response.statusCode != 200) {
         client.close();
@@ -114,20 +115,20 @@ class UpdateChecker {
       final data = jsonDecode(body) as Map<String, dynamic>;
       final latestBuild = data['count'] as int? ?? 0;
 
-      print('UpdateChecker: counter latestBuild=$latestBuild current=$_currentBuild');
+      log('UpdateChecker: counter latestBuild=$latestBuild current=$_currentBuild');
 
       if (latestBuild > _currentBuild) {
-        print('UpdateChecker: update available (build $latestBuild)');
+        log('UpdateChecker: update available (build $latestBuild)');
         return UpdateInfo(
-          latestVersion: '${latestBuild}',
+          latestVersion: '$latestBuild',
           downloadUrl: 'https://github.com/EGBYtest/Unplug/releases/latest',
           isAvailable: true,
         );
       }
 
       return null;
-    } catch (e, _) {
-      print('UpdateChecker: $_counterApi error $e');
+    } catch (e) {
+      log('UpdateChecker: $_counterApi error $e');
       return null;
     }
   }
@@ -155,7 +156,7 @@ class UpdateChecker {
       request.headers.set('User-Agent', 'Unplug/1.7.0');
       final response = await request.close();
 
-      print('UpdateChecker: IP direct HTTP ${response.statusCode}');
+      log('UpdateChecker: IP direct HTTP ${response.statusCode}');
 
       if (response.statusCode != 200) {
         client.close();
@@ -169,14 +170,14 @@ class UpdateChecker {
       final tagName = data['tag_name'] as String? ?? '';
       final latestVersion = tagName.replaceFirst('v', '');
 
-      print('UpdateChecker: IP direct latest=$latestVersion current=$_currentVersion');
+      log('UpdateChecker: IP direct latest=$latestVersion current=$_currentVersion');
 
       if (latestVersion.isEmpty || latestVersion == _currentVersion) {
         return null;
       }
 
       if (_compareVersions(latestVersion, _currentVersion) > 0) {
-        print('UpdateChecker: IP direct update available v$latestVersion');
+        log('UpdateChecker: IP direct update available v$latestVersion');
         return UpdateInfo(
           latestVersion: latestVersion,
           downloadUrl: 'https://github.com/EGBYtest/Unplug/releases/tag/v$latestVersion',
@@ -185,8 +186,8 @@ class UpdateChecker {
       }
 
       return null;
-    } catch (e, _) {
-      print('UpdateChecker: IP direct error $e');
+    } catch (e) {
+      log('UpdateChecker: IP direct error $e');
       return null;
     }
   }

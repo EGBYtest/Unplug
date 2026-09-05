@@ -55,9 +55,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
         builder: (ctx, setInner) {
           int wordCount = ctrl.text.trim().split(RegExp(r'\s+')).where((w) => w.isNotEmpty).length;
           return CupertinoAlertDialog(
-            title: Row(
+            title: const Row(
               mainAxisAlignment: MainAxisAlignment.center,
-              children: const [
+              children: [
                 Icon(CupertinoIcons.pencil_outline, size: 18),
                 SizedBox(width: 6),
                 Text('Type to Unlock'),
@@ -160,7 +160,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ));
                       await _storage.saveGroups(_groups);
                       _tracker.appGroups = List.from(_groups);
-                      if (context.mounted) Navigator.pop(context);
+                      if (mounted) Navigator.pop(context);
                     },
                   ),
                 ],
@@ -218,7 +218,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     onPressed: () async {
                       setState(() => _adRewardSeconds = tempMinutes * 60 + tempSeconds);
                       await _storage.saveAdRewardSeconds(_adRewardSeconds);
-                      if (context.mounted) Navigator.pop(context);
+                      if (mounted) Navigator.pop(context);
                     },
                   ),
                 ],
@@ -292,7 +292,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       navigationBar: CupertinoNavigationBar(
         middle: const Text('Settings', style: TextStyle(color: Colors.white)),
         previousPageTitle: 'Dashboard',
-        backgroundColor: const Color(0xFF0F0F0F).withOpacity(0.9),
+        backgroundColor: const Color(0xFF0F0F0F).withValues(alpha: 0.9),
         border: null,
         trailing: _isUnlocked
             ? CupertinoButton(
@@ -320,7 +320,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     final bonusSeconds = _storage.getBonusSeconds(group.name);
                     return CupertinoListTile(
                       backgroundColor: const Color(0xFF1C1C1E),
-                      leading: Icon(CupertinoIcons.timer, color: const Color(0xFF0A84FF), size: 22),
+                      leading: const Icon(CupertinoIcons.timer, color: Color(0xFF0A84FF), size: 22),
                       title: Text(group.name, style: const TextStyle(color: Colors.white)),
                       subtitle: Text(
                         '${group.packageNames.length} apps${bonusSeconds > 0 ? "  •  +${_formatSeconds(bonusSeconds)} bonus" : ""}',
@@ -463,11 +463,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   decoration: BoxDecoration(color: const Color(0xFF1C1C1E), borderRadius: BorderRadius.circular(12)),
                   header: const Text('ABOUT', style: TextStyle(color: Colors.white54)),
                   children: [
-                    CupertinoListTile(
-                      backgroundColor: const Color(0xFF1C1C1E),
-                      leading: const Icon(CupertinoIcons.lock_fill, color: Color(0xFF30D158), size: 22),
-                      title: const Text('Privacy', style: TextStyle(color: Colors.white)),
-                      additionalInfo: const Text('All local', style: TextStyle(color: Color(0xFF30D158))),
+                    const CupertinoListTile(
+                      backgroundColor: Color(0xFF1C1C1E),
+                      leading: Icon(CupertinoIcons.lock_fill, color: Color(0xFF30D158), size: 22),
+                      title: Text('Privacy', style: TextStyle(color: Colors.white)),
+                      additionalInfo: Text('All local', style: TextStyle(color: Color(0xFF30D158))),
                     ),
                     CupertinoListTile(
                       backgroundColor: const Color(0xFF1C1C1E),
@@ -495,11 +495,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         }
                       },
                     ),
-                    CupertinoListTile(
-                      backgroundColor: const Color(0xFF1C1C1E),
-                      leading: const Icon(CupertinoIcons.info_circle_fill, color: Colors.white38, size: 22),
-                      title: const Text('Version', style: TextStyle(color: Colors.white)),
-                      additionalInfo: const Text('1.8.0 (Beta)', style: TextStyle(color: Colors.white54)),
+                    const CupertinoListTile(
+                      backgroundColor: Color(0xFF1C1C1E),
+                      leading: Icon(CupertinoIcons.info_circle_fill, color: Colors.white38, size: 22),
+                      title: Text('Version', style: TextStyle(color: Colors.white)),
+                      additionalInfo: Text('1.8.0 (Beta)', style: TextStyle(color: Colors.white54)),
                     ),
                   ],
                 ),
@@ -514,7 +514,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 child: BackdropFilter(
                   filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
                   child: Container(
-                    color: Colors.black.withOpacity(0.65),
+                    color: Colors.black.withValues(alpha: 0.65),
                     alignment: Alignment.center,
                     padding: const EdgeInsets.all(32),
                     child: Column(
@@ -523,7 +523,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         Container(
                           padding: const EdgeInsets.all(22),
                           decoration: BoxDecoration(
-                            color: const Color(0xFF2C2C2E).withOpacity(0.5),
+                            color: const Color(0xFF2C2C2E).withValues(alpha: 0.5),
                             shape: BoxShape.circle,
                           ),
                           child: const Icon(CupertinoIcons.lock_shield_fill, size: 72, color: Colors.white),
@@ -536,14 +536,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         SizedBox(
                           width: double.infinity,
                           child: Container(
-                            decoration: BoxDecoration(borderRadius: BorderRadius.circular(14), boxShadow: [BoxShadow(color: const Color(0xFF0A84FF).withOpacity(0.3), blurRadius: 20, offset: const Offset(0, 4))]),
+                            decoration: BoxDecoration(borderRadius: BorderRadius.circular(14), boxShadow: [BoxShadow(color: const Color(0xFF0A84FF).withValues(alpha: 0.3), blurRadius: 20, offset: const Offset(0, 4))]),
                             child: CupertinoButton(
                               color: const Color(0xFF0A84FF),
                               borderRadius: BorderRadius.circular(14),
                               onPressed: _watchAdToUnlock,
-                              child: Row(
+                              child: const Row(
                                 mainAxisAlignment: MainAxisAlignment.center,
-                                children: const [
+                                children: [
                                   Icon(CupertinoIcons.play_circle_fill, color: Colors.white, size: 20),
                                   SizedBox(width: 10),
                                   Text('Wait 30s to Unlock', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
@@ -559,9 +559,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             color: const Color(0xFF1C1C1E),
                             borderRadius: BorderRadius.circular(14),
                             onPressed: _showTypeChallenge,
-                            child: Row(
+                            child: const Row(
                               mainAxisAlignment: MainAxisAlignment.center,
-                              children: const [
+                              children: [
                                 Icon(CupertinoIcons.pencil, color: Color(0xFF0A84FF), size: 20),
                                 SizedBox(width: 10),
                                 Text('Type 50 words to Unlock', style: TextStyle(color: Color(0xFF0A84FF), fontWeight: FontWeight.bold)),
@@ -728,7 +728,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     onPressed: () async {
                       setState(() => _resetHour = tempHour);
                       await _storage.saveResetHour(tempHour);
-                      if (context.mounted) Navigator.pop(context);
+                      if (mounted) Navigator.pop(context);
                     },
                   ),
                 ],

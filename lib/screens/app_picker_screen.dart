@@ -127,12 +127,12 @@ class _AppPickerScreenState extends State<AppPickerScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             decoration: BoxDecoration(
               color: isSelected
-                  ? const Color(0xFF0A84FF).withOpacity(0.15)
+                  ? const Color(0xFF0A84FF).withValues(alpha: 0.15)
                   : const Color(0xFF1C1C1E),
               borderRadius: BorderRadius.circular(10),
               border: Border.all(
                 color: isSelected
-                    ? const Color(0xFF0A84FF).withOpacity(0.5)
+                    ? const Color(0xFF0A84FF).withValues(alpha: 0.5)
                     : Colors.transparent,
               ),
             ),
@@ -185,7 +185,7 @@ class _AppPickerScreenState extends State<AppPickerScreen> {
           style: const TextStyle(color: Colors.white),
         ),
         previousPageTitle: 'Settings',
-        backgroundColor: const Color(0xFF0F0F0F).withOpacity(0.9),
+        backgroundColor: const Color(0xFF0F0F0F).withValues(alpha: 0.9),
         border: null,
         trailing: CupertinoButton(
           padding: EdgeInsets.zero,
@@ -197,9 +197,9 @@ class _AppPickerScreenState extends State<AppPickerScreen> {
             final validSelected = _selected.where((p) => existingPackages.contains(p)).toList();
             Navigator.of(context).pop(validSelected);
           },
-          child: Text(
+          child: const Text(
             'Done',
-            style: const TextStyle(
+            style: TextStyle(
               color: Color(0xFF0A84FF),
               fontWeight: FontWeight.bold,
             ),

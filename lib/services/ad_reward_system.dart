@@ -99,7 +99,7 @@ class _PromoWaitDialogState extends State<_PromoWaitDialog> {
               width: 72,
               height: 72,
               decoration: BoxDecoration(
-                color: const Color(0xFF0A84FF).withOpacity(0.12),
+                color: const Color(0xFF0A84FF).withValues(alpha: 0.12),
                 shape: BoxShape.circle,
               ),
               child: const Icon(
