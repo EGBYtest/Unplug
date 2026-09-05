@@ -48,9 +48,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Future<void> _checkUpdate() async {
     var info = UpdateChecker.cachedUpdate;
-    if (info == null) {
-      info = await UpdateChecker.check();
-    }
+    info ??= await UpdateChecker.check();
     if (mounted && info.isAvailable) {
       setState(() => _updateInfo = info);
     }
@@ -156,7 +154,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         slivers: [
           CupertinoSliverNavigationBar(
             largeTitle: const Text('Dashboard', style: TextStyle(color: Colors.white)),
-            backgroundColor: const Color(0xFF0F0F0F).withOpacity(0.9),
+            backgroundColor: const Color(0xFF0F0F0F).withValues(alpha: 0.9),
             border: null,
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
@@ -307,7 +305,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   child: Container(
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(14),
-                      boxShadow: [BoxShadow(color: const Color(0xFF0A84FF).withOpacity(0.25), blurRadius: 20, offset: const Offset(0, 4))],
+                      boxShadow: [BoxShadow(color: const Color(0xFF0A84FF).withValues(alpha: 0.25), blurRadius: 20, offset: const Offset(0, 4))],
                     ),
                     child: CupertinoButton.filled(
                       borderRadius: BorderRadius.circular(14),
@@ -316,9 +314,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         setState(() { _groups = _storage.loadGroups(); });
                         _loadUsage();
                       },
-                      child: Row(
+                      child: const Row(
                         mainAxisAlignment: MainAxisAlignment.center,
-                        children: const [
+                        children: [
                           Icon(CupertinoIcons.slider_horizontal_3, size: 18),
                           SizedBox(width: 8),
                           Text('Manage App Groups', style: TextStyle(fontWeight: FontWeight.bold)),
@@ -370,7 +368,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         decoration: BoxDecoration(
           shape: BoxShape.circle,
           color: const Color(0xFF121212),
-          boxShadow: [BoxShadow(color: ringColor.withOpacity(0.18), blurRadius: 40, spreadRadius: 10)],
+          boxShadow: [BoxShadow(color: ringColor.withValues(alpha: 0.18), blurRadius: 40, spreadRadius: 10)],
         ),
         child: Stack(
           alignment: Alignment.center,
@@ -420,14 +418,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           decoration: BoxDecoration(
             color: const Color(0xFF1C1C1E),
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: const Color(0xFF0A84FF).withOpacity(0.3)),
+            border: Border.all(color: const Color(0xFF0A84FF).withValues(alpha: 0.3)),
           ),
           child: Row(
             children: [
               Container(
                 width: 36, height: 36,
                 decoration: BoxDecoration(
-                  color: const Color(0xFF0A84FF).withOpacity(0.15),
+                  color: const Color(0xFF0A84FF).withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: const Icon(CupertinoIcons.cloud_download_fill, color: Color(0xFF0A84FF), size: 18),
@@ -497,7 +495,7 @@ class _StatCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: const Color(0xFF1C1C1E),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: color.withOpacity(0.15)),
+        border: Border.all(color: color.withValues(alpha: 0.15)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -554,7 +552,7 @@ class _AppLimitTile extends StatelessWidget {
               children: [
                 Container(
                   width: 36, height: 36,
-                  decoration: BoxDecoration(color: accentColor.withOpacity(0.15), borderRadius: BorderRadius.circular(8)),
+                  decoration: BoxDecoration(color: accentColor.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(8)),
                   child: Icon(isExhausted ? CupertinoIcons.lock_fill : CupertinoIcons.timer, color: accentColor, size: 18),
                 ),
                 const SizedBox(width: 12),
@@ -575,7 +573,7 @@ class _AppLimitTile extends StatelessWidget {
                   children: [
                     Text(
                       isExhausted ? 'DONE' : formatMinutes(remaining),
-                      style: TextStyle(color: accentColor, fontWeight: FontWeight.w700, fontSize: 15, shadows: [Shadow(color: accentColor.withOpacity(0.4), blurRadius: 8)]),
+                      style: TextStyle(color: accentColor, fontWeight: FontWeight.w700, fontSize: 15, shadows: [Shadow(color: accentColor.withValues(alpha: 0.4), blurRadius: 8)]),
                     ),
                     Row(
                       mainAxisSize: MainAxisSize.min,
@@ -587,7 +585,7 @@ class _AppLimitTile extends StatelessWidget {
                               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                               margin: const EdgeInsets.only(right: 4),
                               decoration: BoxDecoration(
-                                color: const Color(0xFFFF3B30).withOpacity(0.15),
+                                color: const Color(0xFFFF3B30).withValues(alpha: 0.15),
                                 borderRadius: BorderRadius.circular(6),
                               ),
                               child: const Text('−bonus', style: TextStyle(color: Color(0xFFFF3B30), fontSize: 9, fontWeight: FontWeight.bold)),

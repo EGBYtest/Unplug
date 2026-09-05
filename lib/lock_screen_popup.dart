@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart' show Colors;
-import 'package:flutter/services.dart';
 import 'services/ad_reward_system.dart';
 import 'services/message_verification.dart';
 import 'services/storage_service.dart';
@@ -132,7 +131,7 @@ class _LockScreenPopupState extends State<LockScreenPopup> {
                   Container(
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFFF3B30).withOpacity(0.12),
+                      color: const Color(0xFFFF3B30).withValues(alpha: 0.12),
                       shape: BoxShape.circle,
                     ),
                     child: Icon(

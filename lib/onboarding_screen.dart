@@ -153,7 +153,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> with WidgetsBinding
                           end: Alignment.bottomRight,
                         ),
                         boxShadow: [
-                          BoxShadow(color: const Color(0xFF0A84FF).withOpacity(0.4), blurRadius: 30, spreadRadius: 5),
+                          BoxShadow(color: const Color(0xFF0A84FF).withValues(alpha: 0.4), blurRadius: 30, spreadRadius: 5),
                         ],
                       ),
                       child: const Icon(CupertinoIcons.lock_shield_fill, color: Colors.white, size: 48),
@@ -174,20 +174,20 @@ class _OnboardingScreenState extends State<OnboardingScreen> with WidgetsBinding
                 decoration: BoxDecoration(
                   color: const Color(0xFF1C1C1E),
                   borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: const Color(0xFFFF9F0A).withOpacity(0.3)),
+                  border: Border.all(color: const Color(0xFFFF9F0A).withValues(alpha: 0.3)),
                 ),
-                child: Column(
+                child: const Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
-                      children: const [
+                      children: [
                         Icon(CupertinoIcons.shield_lefthalf_fill, color: Color(0xFFFF9F0A), size: 18),
                         SizedBox(width: 8),
                         Text('Play Protect Notice', style: TextStyle(color: Color(0xFFFF9F0A), fontWeight: FontWeight.w700, fontSize: 15)),
                       ],
                     ),
-                    const SizedBox(height: 8),
-                    const Text(
+                    SizedBox(height: 8),
+                    Text(
                       'Google Play Protect may warn you during install because Unplug uses an Accessibility Service — a sensitive Android permission. '
                       'This is normal for sideloaded apps that monitor app usage.\n\n'
                       'To install: tap "More details" → "Install anyway".\n'
@@ -206,20 +206,20 @@ class _OnboardingScreenState extends State<OnboardingScreen> with WidgetsBinding
                 decoration: BoxDecoration(
                   color: const Color(0xFF1C1C1E),
                   borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: const Color(0xFF30D158).withOpacity(0.3)),
+                  border: Border.all(color: const Color(0xFF30D158).withValues(alpha: 0.3)),
                 ),
-                child: Column(
+                child: const Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
-                      children: const [
+                      children: [
                         Icon(CupertinoIcons.lock_fill, color: Color(0xFF30D158), size: 18),
                         SizedBox(width: 8),
                         Text('Private & Open Source', style: TextStyle(color: Color(0xFF30D158), fontWeight: FontWeight.w700, fontSize: 15)),
                       ],
                     ),
-                    const SizedBox(height: 8),
-                    const Text(
+                    SizedBox(height: 8),
+                    Text(
                       '✓  All data is stored locally on your device.\n'
                       '✓  Nothing is ever sent to any server.\n'
                       '✓  Fully open-source — inspect the code anytime.',
@@ -259,7 +259,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> with WidgetsBinding
                   decoration: BoxDecoration(
                     color: const Color(0xFF1C1C1E),
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: const Color(0xFFFF9F0A).withOpacity(0.3)),
+                    border: Border.all(color: const Color(0xFFFF9F0A).withValues(alpha: 0.3)),
                   ),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -306,7 +306,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> with WidgetsBinding
                         decoration: allGranted
                             ? BoxDecoration(
                                 borderRadius: BorderRadius.circular(14),
-                                boxShadow: [BoxShadow(color: const Color(0xFF0A84FF).withOpacity(0.4), blurRadius: 24, offset: const Offset(0, 4))],
+                                boxShadow: [BoxShadow(color: const Color(0xFF0A84FF).withValues(alpha: 0.4), blurRadius: 24, offset: const Offset(0, 4))],
                               )
                             : null,
                         child: CupertinoButton.filled(
@@ -357,17 +357,17 @@ class _PermissionCard extends StatelessWidget {
           color: const Color(0xFF1C1C1E),
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
-            color: isGranted ? const Color(0xFF30D158).withOpacity(0.6) : const Color(0xFF3A3A3C),
+            color: isGranted ? const Color(0xFF30D158).withValues(alpha: 0.6) : const Color(0xFF3A3A3C),
             width: 1.5,
           ),
-          boxShadow: isGranted ? [BoxShadow(color: const Color(0xFF30D158).withOpacity(0.12), blurRadius: 16)] : [],
+          boxShadow: isGranted ? [BoxShadow(color: const Color(0xFF30D158).withValues(alpha: 0.12), blurRadius: 16)] : [],
         ),
         child: Row(
           children: [
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: isGranted ? const Color(0xFF30D158).withOpacity(0.15) : const Color(0xFF2C2C2E),
+                color: isGranted ? const Color(0xFF30D158).withValues(alpha: 0.15) : const Color(0xFF2C2C2E),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Icon(icon, color: isGranted ? const Color(0xFF30D158) : Colors.white54, size: 24),

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:developer' show log;
 import 'package:usage_stats/usage_stats.dart';
 import '../models/app_group.dart';
 import 'app_closure_handler.dart';
@@ -52,7 +53,7 @@ class UsageTracker {
     final startDate = endDate.hour < h
         ? DateTime(endDate.year, endDate.month, endDate.day - 1, h)
         : DateTime(endDate.year, endDate.month, endDate.day, h);
-    print('UsageTracker: $packageName start=${startDate.toIso8601String()} end=${endDate.toIso8601String()} resetHour=$h');
+    log('UsageTracker: $packageName start=${startDate.toIso8601String()} end=${endDate.toIso8601String()} resetHour=$h');
 
     List<UsageInfo> usageStats = await UsageStats.queryUsageStats(startDate, endDate);
     for (var info in usageStats) {
