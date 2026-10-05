@@ -10,12 +10,14 @@ class LockScreenPopup extends StatefulWidget {
   final String appName;
   final String? groupName;
   final String? bannedFeature;
+  final bool skipCountdown;
 
   const LockScreenPopup({
     Key? key,
     required this.appName,
     this.groupName,
     this.bannedFeature,
+    this.skipCountdown = false,
   }) : super(key: key);
 
   @override
@@ -44,7 +46,11 @@ class _LockScreenPopupState extends State<LockScreenPopup> {
     super.initState();
     _targetMessage = _verifier.generateMessage();
     _textController.addListener(_onTextChanged);
-    _startCountdown();
+    if (widget.skipCountdown) {
+      _showOptions = true;
+    } else {
+      _startCountdown();
+    }
   }
 
   @override

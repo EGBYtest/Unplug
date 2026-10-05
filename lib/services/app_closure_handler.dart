@@ -86,10 +86,14 @@ class AppClosureHandler {
 
   /// Displays the LockScreen as full-screen route.
   /// Returns when lock screen is dismissed.
-  Future<void> showLockScreen(BuildContext context, String appName, {String? bannedFeature}) {
+  Future<void> showLockScreen(BuildContext context, String appName, {String? bannedFeature, bool skipCountdown = false}) {
     return Navigator.of(context).push<void>(
       CupertinoPageRoute(
-        builder: (_) => LockScreenPopup(appName: appName, bannedFeature: bannedFeature),
+        builder: (_) => LockScreenPopup(
+          appName: appName,
+          bannedFeature: bannedFeature,
+          skipCountdown: skipCountdown,
+        ),
         settings: const RouteSettings(name: 'lock_screen'),
       ),
     );

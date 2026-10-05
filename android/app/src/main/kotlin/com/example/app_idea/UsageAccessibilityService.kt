@@ -11,6 +11,20 @@ import android.util.Log
 import android.content.SharedPreferences
 import org.json.JSONArray
 import java.util.Calendar
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
+import android.provider.Settings
+import android.view.Gravity
+import android.view.KeyEvent
+import android.view.View
+import android.view.ViewGroup
+import android.view.WindowManager
+import android.widget.LinearLayout
+import android.widget.TextView
+import android.graphics.Color
+import android.graphics.PixelFormat
+import android.graphics.Typeface
 
 private fun SharedPreferences.getFlutterInt(key: String, default: Int): Int {
     return try {
@@ -31,6 +45,15 @@ class UsageAccessibilityService : AccessibilityService() {
     private var lastPkg = ""
     private var lastCheck = 0L
     private val blockCount = mutableMapOf<String, LongArray>() // pkg -> [count, firstBlockMs]
+
+    // Full-screen countdown overlay state
+    private var overlayView: View? = null
+    private var overlayCountdown = 0
+    private var overlayActive = false
+    private var overlayGroup = ""
+    private var overlayFeature: String? = null
+    private var lastMainLaunch = 0L
+    private val overlayHandler = Handler(Looper.getMainLooper())
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         try {
@@ -256,30 +279,53 @@ class UsageAccessibilityService : AccessibilityService() {
             val isClickable = node.isClickable
             val isFocusable = node.isFocusable
             val isEdgeUi = isPositionedAtScreenEdge(node)
+            val isSelected = node.isSelected
 
-            // Skip entire nav-bar subtree
-            if (isNavChild) return false
+            // Skip entire nav-bar subtree (unless the nav item itself is the
+            // selected/active tab — a selected tab means the user is currently
+            // on that feature, e.g. Snapchat's "Spotlight" tab).
+            if (isNavChild && !isSelected) return false
 
             for (kw in keywords) {
-                // Check view ID resource name — skip clickable/focusable nodes
-                // (tabs/buttons) whose IDs happen to contain a keyword.
-                if (!isClickable && !isFocusable && nodeViewId.isNotEmpty() && nodeViewId.contains(kw)) {
-                    Log.i(TAG, "Matched viewId: '$kw' in '$nodeViewId'")
-                    return true
-                }
-
-                // Check class name (e.g. com.google.android.apps.youtube.app.extensions.reel...)
-                if (nodeClass.isNotEmpty() && nodeClass.contains(kw)) {
-                    Log.i(TAG, "Matched className: '$kw' in '$nodeClass'")
-                    return true
-                }
-
-                // Check text or content description — skip interactive elements
-                // and edge-positioned elements (bottom nav labels, action bar titles).
-                if (!isClickable && !isFocusable && !isEdgeUi) {
-                    if ((nodeText.isNotEmpty() && nodeText.contains(kw)) || (nodeDesc.isNotEmpty() && nodeDesc.contains(kw))) {
-                        Log.i(TAG, "Matched text/desc: '$kw' (text='$nodeText', desc='$nodeDesc')")
+                // Selected node: the user is actively on this feature, so match
+                // text/desc/viewId without the interactive-element skips. This
+                // catches labeled nav tabs (Snapchat Spotlight) and selected
+                // toolbar items that the conservative rules would otherwise miss.
+                if (isSelected) {
+                    if (nodeViewId.isNotEmpty() && nodeViewId.contains(kw)) {
+                        Log.i(TAG, "Matched selected viewId: '$kw' in '$nodeViewId'")
                         return true
+                    }
+                    if (nodeClass.isNotEmpty() && nodeClass.contains(kw)) {
+                        Log.i(TAG, "Matched selected className: '$kw' in '$nodeClass'")
+                        return true
+                    }
+                    if ((nodeText.isNotEmpty() && nodeText.contains(kw)) || (nodeDesc.isNotEmpty() && nodeDesc.contains(kw))) {
+                        Log.i(TAG, "Matched selected text/desc: '$kw' (text='$nodeText', desc='$nodeDesc')")
+                        return true
+                    }
+                    // No match on this selected node — keep scanning its children.
+                } else {
+                    // Check view ID resource name — skip clickable/focusable nodes
+                    // (tabs/buttons) whose IDs happen to contain a keyword.
+                    if (!isClickable && !isFocusable && nodeViewId.isNotEmpty() && nodeViewId.contains(kw)) {
+                        Log.i(TAG, "Matched viewId: '$kw' in '$nodeViewId'")
+                        return true
+                    }
+
+                    // Check class name (e.g. com.google.android.apps.youtube.app.extensions.reel...)
+                    if (nodeClass.isNotEmpty() && nodeClass.contains(kw)) {
+                        Log.i(TAG, "Matched className: '$kw' in '$nodeClass'")
+                        return true
+                    }
+
+                    // Check text or content description — skip interactive elements
+                    // and edge-positioned elements (bottom nav labels, action bar titles).
+                    if (!isClickable && !isFocusable && !isEdgeUi) {
+                        if ((nodeText.isNotEmpty() && nodeText.contains(kw)) || (nodeDesc.isNotEmpty() && nodeDesc.contains(kw))) {
+                            Log.i(TAG, "Matched text/desc: '$kw' (text='$nodeText', desc='$nodeDesc')")
+                            return true
+                        }
                     }
                 }
             }
@@ -356,7 +402,10 @@ class UsageAccessibilityService : AccessibilityService() {
     }
 
     private fun blockApp(pkg: String, group: String, feature: String? = null) {
+        // Don't stack overlays or restart the flow while one is active.
+        if (overlayActive) return
         val now = System.currentTimeMillis()
+        if (now - lastMainLaunch < 1500) return
 
         val entry = blockCount[pkg]
         val count = if (entry != null && now - entry[1] < 5000) entry[0].toInt() + 1 else 1
@@ -378,7 +427,6 @@ class UsageAccessibilityService : AccessibilityService() {
             return
         }
 
-        val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
         val hasOverlay = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
             android.provider.Settings.canDrawOverlays(this)
         } else true
@@ -392,12 +440,174 @@ class UsageAccessibilityService : AccessibilityService() {
             performGlobalAction(GLOBAL_ACTION_BACK)
         }
 
+        // Full-screen OS overlay with an unclosable 3s countdown. After the
+        // countdown the Flutter lock screen (options) is shown as an
+        // overlay-typed window so it covers whatever app is beneath.
+        showCountdownOverlay(group, feature ?: "")
+    }
+
+    /**
+     * Adds a full-screen, touch-blocking overlay window (SYSTEM_ALERT_WINDOW)
+     * with a 3-2-1 countdown. Back is consumed while it is visible; the overlay
+     * itself cannot be dismissed because it sits above every app and the
+     * launcher. When the countdown finishes the Flutter lock screen is
+     * launched with the countdown skipped.
+     */
+    private fun showCountdownOverlay(group: String, feature: String) {
+        try {
+            val canOverlay = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                Settings.canDrawOverlays(this)
+            } else true
+            if (!canOverlay) {
+                launchLockScreenActivity(group, feature, skipCountdown = false)
+                return
+            }
+
+            removeOverlay()
+            overlayGroup = group
+            overlayFeature = feature
+            overlayCountdown = 3
+            overlayActive = true
+
+            val ctx = applicationContext
+            val root = LinearLayout(ctx).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                setBackgroundColor(Color.parseColor("#FF0A0A0A"))
+                isClickable = true
+            }
+            root.setOnTouchListener { _, _ -> true }
+
+            val isFeature = feature.isNotEmpty()
+            val icon = TextView(ctx).apply {
+                text = if (isFeature) "🚫" else "🔒"
+                textSize = 44f
+                gravity = Gravity.CENTER
+            }
+            val title = TextView(ctx).apply {
+                text = if (isFeature) "In-App Feature Blocked" else "Time Exhausted"
+                textSize = 22f
+                setTextColor(Color.WHITE)
+                setTypeface(null, Typeface.BOLD)
+                gravity = Gravity.CENTER
+            }
+            val subtitle = TextView(ctx).apply {
+                text = if (isFeature) "Access to \"$feature\" in $group is restricted."
+                        else "Your screen time for \"$group\" is up."
+                textSize = 15f
+                setTextColor(Color.parseColor("#B3B3B3"))
+                gravity = Gravity.CENTER
+                setPadding(dp(32), dp(8), dp(32), 0)
+            }
+            val count = TextView(ctx).apply {
+                id = 0x1001
+                text = "3"
+                textSize = 64f
+                setTextColor(Color.parseColor("#0A84FF"))
+                setTypeface(null, Typeface.BOLD)
+                gravity = Gravity.CENTER
+            }
+            val note = TextView(ctx).apply {
+                text = "Take three seconds before deciding\nif you really want more screen time."
+                textSize = 13f
+                setTextColor(Color.parseColor("#8C8C8C"))
+                gravity = Gravity.CENTER
+                setPadding(dp(32), dp(12), dp(32), 0)
+            }
+
+            root.addView(icon)
+            root.addView(title)
+            root.addView(subtitle)
+            root.addView(count)
+            root.addView(note)
+
+            val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            } else {
+                @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE
+            }
+            val params = WindowManager.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                type,
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                    WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON,
+                PixelFormat.OPAQUE
+            )
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                params.layoutInDisplayCutoutMode =
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
+
+            val wm = getSystemService(WINDOW_SERVICE) as WindowManager
+            wm.addView(root, params)
+            overlayView = root
+            Log.i(TAG, "countdown overlay shown for $group")
+
+            overlayHandler.removeCallbacks(overlayTick)
+            overlayHandler.post(overlayTick)
+        } catch (e: Exception) {
+            Log.e(TAG, "overlay error", e)
+            overlayActive = false
+            removeOverlay()
+            launchLockScreenActivity(group, feature, skipCountdown = false)
+        }
+    }
+
+    private val overlayTick = object : Runnable {
+        override fun run() {
+            if (!overlayActive) return
+            if (overlayCountdown > 0) {
+                overlayView?.findViewById<TextView>(0x1001)?.text = overlayCountdown.toString()
+                overlayCountdown--
+                overlayHandler.postDelayed(this, 1000)
+            } else {
+                removeOverlay()
+                launchLockScreenActivity(overlayGroup, overlayFeature ?: "", skipCountdown = true)
+            }
+        }
+    }
+
+    private fun removeOverlay() {
+        try {
+            val view = overlayView
+            if (view != null) {
+                val wm = getSystemService(WINDOW_SERVICE) as WindowManager
+                wm.removeView(view)
+            }
+        } catch (_: Exception) {}
+        overlayView = null
+        overlayActive = false
+        overlayHandler.removeCallbacks(overlayTick)
+    }
+
+    private fun launchLockScreenActivity(group: String, feature: String, skipCountdown: Boolean) {
+        lastMainLaunch = System.currentTimeMillis()
         val i = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
             putExtra("SHOW_LOCK_SCREEN_APP_NAME", group)
-            putExtra("SHOW_LOCK_SCREEN_FEATURE_NAME", feature ?: "")
+            putExtra("SHOW_LOCK_SCREEN_FEATURE_NAME", feature)
+            putExtra("SHOW_LOCK_SCREEN_SKIP_COUNTDOWN", skipCountdown)
         }
         startActivity(i)
+    }
+
+    private fun dp(value: Int): Int =
+        (value * resources.displayMetrics.density).toInt()
+
+    override fun onKeyEvent(event: KeyEvent): Boolean {
+        if (overlayActive) {
+            when (event.keyCode) {
+                KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_HOME -> return true
+            }
+        }
+        return super.onKeyEvent(event)
+    }
+
+    override fun onDestroy() {
+        removeOverlay()
+        super.onDestroy()
     }
 
     private fun enforceVisiblePackages() {

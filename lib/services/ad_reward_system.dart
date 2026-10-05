@@ -52,15 +52,67 @@ class _PromoWaitDialog extends StatefulWidget {
   State<_PromoWaitDialog> createState() => _PromoWaitDialogState();
 }
 
-class _PromoWaitDialogState extends State<_PromoWaitDialog> {
+class _PromoWaitDialogState extends State<_PromoWaitDialog>
+    with WidgetsBindingObserver {
   int _remaining = 30;
   late Timer _timer;
   bool _cancelled = false;
+  bool _paused = false;
+  AppLifecycleState _lifecycleState = AppLifecycleState.resumed;
+  Size? _fullSize;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    // Capture the initial full-screen size so we can detect
+    // floating / split-screen / pop-up views where the window shrinks.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _fullSize = MediaQuery.sizeOf(context);
+    });
+    _startTicker();
+  }
+
+  @override
+  void dispose() {
+    _timer.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _lifecycleState = state;
+  }
+
+  void _startTicker() {
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      final size = MediaQuery.sizeOf(context);
+      final isFullscreen =
+          _fullSize == null ||
+          (size.width >= _fullSize!.width - 1 &&
+              size.height >= _fullSize!.height - 1);
+      final isActive = _lifecycleState == AppLifecycleState.resumed && isFullscreen;
+
+      if (!isActive) {
+        if (!_paused) {
+          setState(() {
+            _paused = true;
+            _remaining = 30;
+          });
+        }
+        return;
+      }
+
+      if (_paused) {
+        setState(() {
+          _paused = false;
+          _remaining = 30;
+        });
+        return;
+      }
+
       if (_remaining > 0) {
         setState(() => _remaining--);
       } else {
@@ -71,12 +123,6 @@ class _PromoWaitDialogState extends State<_PromoWaitDialog> {
         }
       }
     });
-  }
-
-  @override
-  void dispose() {
-    _timer.cancel();
-    super.dispose();
   }
 
   void _cancel() {
@@ -134,7 +180,9 @@ class _PromoWaitDialogState extends State<_PromoWaitDialog> {
             ),
             const SizedBox(height: 20),
             Text(
-              'Wait ${_remaining}s for +time',
+              _paused
+                  ? 'Paused — timer resets when Unplug is fully open'
+                  : 'Wait ${_remaining}s for +time',
               style: const TextStyle(fontSize: 13, color: Colors.white54),
             ),
             const SizedBox(height: 8),
@@ -143,7 +191,7 @@ class _PromoWaitDialogState extends State<_PromoWaitDialog> {
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(4),
                 child: LinearProgressIndicator(
-                  value: (30 - _remaining) / 30.0,
+                  value: _paused ? 0 : (30 - _remaining) / 30.0,
                   backgroundColor: Colors.white12,
                   valueColor: AlwaysStoppedAnimation<Color>(
                     CupertinoTheme.of(context).primaryColor,

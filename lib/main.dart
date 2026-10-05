@@ -68,12 +68,14 @@ class _UnplugAppState extends State<UnplugApp> {
         final args = call.arguments is Map ? call.arguments as Map : {};
         final appName = args['appName'] ?? 'App';
         final bannedFeature = args['bannedFeature'] as String?;
+        final skipCountdown = args['skipCountdown'] == true;
         final context = navigatorKey.currentContext;
         if (context != null) {
           await AppClosureHandler().showLockScreen(
             context,
             appName as String,
             bannedFeature: (bannedFeature != null && bannedFeature.isNotEmpty) ? bannedFeature : null,
+            skipCountdown: skipCountdown,
           );
           _channel.invokeMethod('lockScreenDismissed');
         }

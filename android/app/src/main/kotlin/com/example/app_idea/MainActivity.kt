@@ -17,6 +17,7 @@ class MainActivity : FlutterActivity() {
     private var channel: MethodChannel? = null
     private var pendingApp: String? = null
     private var pendingFeature: String? = null
+    private var pendingSkipCountdown: Boolean = false
     private var lockScreenActive = false
 
     private fun enableOverlay() {
@@ -83,11 +84,12 @@ class MainActivity : FlutterActivity() {
         super.onResume()
         val app = pendingApp ?: return
         val feat = pendingFeature
-        pendingApp = null; pendingFeature = null
-        enterLockScreenMode(app, feat ?: "")
+        val skip = pendingSkipCountdown
+        pendingApp = null; pendingFeature = null; pendingSkipCountdown = false
+        enterLockScreenMode(app, feat ?: "", skip)
     }
 
-    private fun enterLockScreenMode(app: String, feature: String) {
+    private fun enterLockScreenMode(app: String, feature: String, skipCountdown: Boolean) {
         lockScreenActive = true
         window.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED)
         window.addFlags(WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON)
@@ -102,7 +104,11 @@ class MainActivity : FlutterActivity() {
             attempts++
             val engine = flutterEngine
             if (engine != null && engine.dartExecutor.isExecutingDart && channel != null) {
-                channel!!.invokeMethod("showLockScreen", mapOf("appName" to app, "bannedFeature" to feature))
+                channel!!.invokeMethod("showLockScreen", mapOf(
+                    "appName" to app,
+                    "bannedFeature" to feature,
+                    "skipCountdown" to skipCountdown
+                ))
             } else if (attempts < 10) {
                 h.postDelayed({ trySend() }, 300)
             }
@@ -136,7 +142,9 @@ class MainActivity : FlutterActivity() {
         val app = intent.getStringExtra("SHOW_LOCK_SCREEN_APP_NAME") ?: return
         pendingApp = app
         pendingFeature = intent.getStringExtra("SHOW_LOCK_SCREEN_FEATURE_NAME")
+        pendingSkipCountdown = intent.getBooleanExtra("SHOW_LOCK_SCREEN_SKIP_COUNTDOWN", false)
         intent.removeExtra("SHOW_LOCK_SCREEN_APP_NAME")
         intent.removeExtra("SHOW_LOCK_SCREEN_FEATURE_NAME")
+        intent.removeExtra("SHOW_LOCK_SCREEN_SKIP_COUNTDOWN")
     }
 }
