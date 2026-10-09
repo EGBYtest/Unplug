@@ -445,6 +445,17 @@ class UsageAccessibilityService : AccessibilityService() {
                 }
             } else {
                 for (kw in keywords) {
+                    // Top-edge screen title (e.g. Snapchat's "Spotlight!"
+                    // header) names the current feature directly. It must
+                    // match even when the node is clickable/focusable or
+                    // wrapped in a toolbar/action-bar container — those
+                    // properties are common on header labels and cannot
+                    // be trusted to exclude it.
+                    if (visible && isPositionedAtScreenTop(node) &&
+                        (nodeText.contains(kw) || nodeDesc.contains(kw))) {
+                        Log.i(TAG, "Matched top title text: '$kw'")
+                        return true
+                    }
                     // Feature-specific player classes only exist while
                     // the feature is on screen.
                     if (visible && nodeClass.isNotEmpty() && nodeClass.contains(kw)) {
@@ -508,8 +519,10 @@ class UsageAccessibilityService : AccessibilityService() {
 
     /**
      * Returns true if the node is a small element in the top
-     * 10% of the screen — an action-bar / header title that
-     * names the current screen.
+     * 15% of the screen — an action-bar / header title that
+     * names the current screen (e.g. Snapchat's "Spotlight!"
+     * label). Keyword-gated, so widening the band cannot cause
+     * false positives on other screens.
      */
     private fun isPositionedAtScreenTop(node: AccessibilityNodeInfo): Boolean {
         try {
@@ -517,8 +530,8 @@ class UsageAccessibilityService : AccessibilityService() {
             node.getBoundsInScreen(rect)
             val screenHeight = resources.displayMetrics.heightPixels
             val density = resources.displayMetrics.density
-            val smallHeight = (120 * density).toInt()
-            return rect.bottom < screenHeight * 0.10f && rect.height() < smallHeight
+            val smallHeight = (160 * density).toInt()
+            return rect.bottom < screenHeight * 0.15f && rect.height() < smallHeight
         } catch (_: Exception) {
             return false
         }
