@@ -292,7 +292,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       navigationBar: CupertinoNavigationBar(
         middle: const Text('Settings', style: TextStyle(color: Colors.white)),
         previousPageTitle: 'Dashboard',
-        backgroundColor: const Color(0xFF0F0F0F).withValues(alpha: 0.9),
+        backgroundColor: const Color(0xFF0F0F0F).withOpacity(0.9),
         border: null,
         trailing: _isUnlocked
             ? CupertinoButton(
@@ -514,7 +514,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 child: BackdropFilter(
                   filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
                   child: Container(
-                    color: Colors.black.withValues(alpha: 0.65),
+                    color: Colors.black.withOpacity(0.65),
                     alignment: Alignment.center,
                     padding: const EdgeInsets.all(32),
                     child: Column(
@@ -523,7 +523,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         Container(
                           padding: const EdgeInsets.all(22),
                           decoration: BoxDecoration(
-                            color: const Color(0xFF2C2C2E).withValues(alpha: 0.5),
+                            color: const Color(0xFF2C2C2E).withOpacity(0.5),
                             shape: BoxShape.circle,
                           ),
                           child: const Icon(CupertinoIcons.lock_shield_fill, size: 72, color: Colors.white),
@@ -536,7 +536,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         SizedBox(
                           width: double.infinity,
                           child: Container(
-                            decoration: BoxDecoration(borderRadius: BorderRadius.circular(14), boxShadow: [BoxShadow(color: const Color(0xFF0A84FF).withValues(alpha: 0.3), blurRadius: 20, offset: const Offset(0, 4))]),
+                            decoration: BoxDecoration(borderRadius: BorderRadius.circular(14), boxShadow: [BoxShadow(color: const Color(0xFF0A84FF).withOpacity(0.3), blurRadius: 20, offset: const Offset(0, 4))]),
                             child: CupertinoButton(
                               color: const Color(0xFF0A84FF),
                               borderRadius: BorderRadius.circular(14),

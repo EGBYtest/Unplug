@@ -137,7 +137,7 @@ class _LockScreenPopupState extends State<LockScreenPopup> {
                   Container(
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFFF3B30).withValues(alpha: 0.12),
+                      color: const Color(0xFFFF3B30).withOpacity(0.12),
                       shape: BoxShape.circle,
                     ),
                     child: Icon(
