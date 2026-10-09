@@ -24,6 +24,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late List<BannedFeature> _globalTabBlockers;
   late int _adRewardSeconds;
   late int _resetHour;
+  late bool _settingsLock;
 
   @override
   void initState() {
@@ -32,11 +33,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _globalTabBlockers = List.from(_storage.loadGlobalTabBlockers());
     _adRewardSeconds = _storage.adRewardSeconds;
     _resetHour = _storage.resetHour;
+    _settingsLock = _storage.settingsLockEnabled;
   }
 
-  // ─── Per-Change Challenge ─────────────────────────────────────────
+  // ─── Per-Change Challenge ─────────────────────────────────
 
   void _confirmChange(VoidCallback action) {
+    // Settings Lock off → apply changes instantly, no challenge.
+    if (!_settingsLock) {
+      action();
+      return;
+    }
     showCupertinoModalPopup(
       context: context,
       builder: (_) => CupertinoActionSheet(
@@ -456,6 +463,35 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ],
                 ),
 
+                // ── Security ──
+                CupertinoListSection.insetGrouped(
+                  backgroundColor: Colors.black,
+                  decoration: BoxDecoration(color: const Color(0xFF1C1C1E), borderRadius: BorderRadius.circular(12)),
+                  header: const Text('SECURITY', style: TextStyle(color: Colors.white54)),
+                  footer: const Text('When on, changing settings requires the 30-second wait or typing challenge. Turn off to apply changes instantly.', style: TextStyle(color: Colors.white38, fontSize: 12)),
+                  children: [
+                    CupertinoListTile(
+                      backgroundColor: const Color(0xFF1C1C1E),
+                      leading: const Icon(CupertinoIcons.lock_fill, color: Color(0xFF30D158), size: 22),
+                      title: const Text('Settings Lock', style: TextStyle(color: Colors.white)),
+                      subtitle: Text(
+                        _settingsLock ? 'Challenge required to change settings' : 'Changes apply instantly',
+                        style: TextStyle(
+                          color: _settingsLock ? const Color(0xFF30D158) : Colors.white38,
+                          fontSize: 12,
+                        ),
+                      ),
+                      trailing: CupertinoSwitch(
+                        value: _settingsLock,
+                        onChanged: (val) {
+                          setState(() => _settingsLock = val);
+                          _storage.setSettingsLockEnabled(val);
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+
                 // ── About ──
                 CupertinoListSection.insetGrouped(
                   backgroundColor: Colors.black,
@@ -498,7 +534,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       backgroundColor: Color(0xFF1C1C1E),
                       leading: Icon(CupertinoIcons.info_circle_fill, color: Colors.white38, size: 22),
                       title: Text('Version', style: TextStyle(color: Colors.white)),
-                      additionalInfo: Text('1.8.4 (Beta)', style: TextStyle(color: Colors.white54)),
+                      additionalInfo: Text('1.8.5 (Beta)', style: TextStyle(color: Colors.white54)),
                     ),
                   ],
                 ),

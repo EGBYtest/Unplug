@@ -61,7 +61,8 @@ class UsageAccessibilityService : AccessibilityService() {
             if (type != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
                 type != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED &&
                 type != AccessibilityEvent.TYPE_VIEW_SELECTED &&
-                type != AccessibilityEvent.TYPE_VIEW_CLICKED) return
+                type != AccessibilityEvent.TYPE_VIEW_CLICKED &&
+                type != AccessibilityEvent.TYPE_VIEW_SCROLLED) return
 
             val pkg = event.packageName?.toString()?.trim() ?: return
             if (pkg == packageName || pkg.startsWith("com.android.") || pkg.startsWith("com.systemui")) return
@@ -306,7 +307,8 @@ class UsageAccessibilityService : AccessibilityService() {
             for (kw in keywords) {
                 if (viewId.contains(kw) || cls.contains(kw)) return true
                 if (text.contains(kw) || desc.contains(kw)) {
-                    val inNavRegion = isPositionedAtScreenEdge(node)
+                    val inNavRegion = isPositionedAtScreenTop(node) ||
+                            isPositionedAtScreenBottom(node)
                     if (!forTap || inNavRegion || node.isSelected || hasSelectedAncestor(node)) {
                         Log.i(TAG, "Matched tap node text: '$kw'")
                         return true
@@ -361,7 +363,7 @@ class UsageAccessibilityService : AccessibilityService() {
             val selected = node.isSelected || hasSelectedAncestor(node)
             val visible = node.isVisibleToUser
             val isNav = isNavBarDescendant(node)
-            val isEdgeUi = isPositionedAtScreenEdge(node)
+            val atBottom = isPositionedAtScreenBottom(node)
 
             if (selected) {
                 // Active tab / feature — match everything on it.
@@ -388,8 +390,13 @@ class UsageAccessibilityService : AccessibilityService() {
                         return true
                     }
                     // Plain text only when visible, non-interactive and
-                    // outside the navigation bars.
-                    if (visible && !node.isClickable && !node.isFocusable && !isNav && !isEdgeUi) {
+                    // outside the bottom navigation bar. Top-edge
+                    // titles name the current screen (e.g. Snapchat's
+                    // "Spotlight" header) and are a strong signal, so
+                    // they are matched; bottom-edge nav labels are
+                    // present on every screen and only count when
+                    // selected.
+                    if (visible && !node.isClickable && !node.isFocusable && !isNav && !atBottom) {
                         if (nodeText.contains(kw) || nodeDesc.contains(kw)) {
                             Log.i(TAG, "Matched text/desc: '$kw'")
                             return true
@@ -431,20 +438,37 @@ class UsageAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * Returns true if the node is positioned at the top or bottom edge
-     * of the screen and is small enough to be a navigation / action-bar
-     * element rather than content.
+     * Returns true if the node is a small element in the top
+     * 10% of the screen — an action-bar / header title that
+     * names the current screen.
      */
-    private fun isPositionedAtScreenEdge(node: AccessibilityNodeInfo): Boolean {
+    private fun isPositionedAtScreenTop(node: AccessibilityNodeInfo): Boolean {
         try {
             val rect = android.graphics.Rect()
             node.getBoundsInScreen(rect)
             val screenHeight = resources.displayMetrics.heightPixels
             val density = resources.displayMetrics.density
             val smallHeight = (120 * density).toInt()
-            val atBottom = rect.top > screenHeight * 0.85f && rect.height() < smallHeight
-            val atTop = rect.bottom < screenHeight * 0.10f && rect.height() < smallHeight
-            return atBottom || atTop
+            return rect.bottom < screenHeight * 0.10f && rect.height() < smallHeight
+        } catch (_: Exception) {
+            return false
+        }
+    }
+
+    /**
+     * Returns true if the node is a small element in the bottom
+     * 15% of the screen — a bottom-nav label. These are present
+     * on every screen of the app, so their text only counts as
+     * a feature signal when selected.
+     */
+    private fun isPositionedAtScreenBottom(node: AccessibilityNodeInfo): Boolean {
+        try {
+            val rect = android.graphics.Rect()
+            node.getBoundsInScreen(rect)
+            val screenHeight = resources.displayMetrics.heightPixels
+            val density = resources.displayMetrics.density
+            val smallHeight = (120 * density).toInt()
+            return rect.top > screenHeight * 0.85f && rect.height() < smallHeight
         } catch (_: Exception) {
             return false
         }

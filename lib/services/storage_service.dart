@@ -71,7 +71,7 @@ class StorageService {
 
   // ─── Settings Lock ──────────────────────────────────────────────────────────
 
-  bool get settingsLockEnabled => _prefs?.getBool('settings_lock_enabled') ?? false;
+  bool get settingsLockEnabled => _prefs?.getBool('settings_lock_enabled') ?? true;
 
   Future<void> setSettingsLockEnabled(bool value) async {
     await _prefs?.setBool('settings_lock_enabled', value);
