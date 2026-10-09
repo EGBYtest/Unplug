@@ -372,7 +372,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   backgroundColor: Colors.black,
                   decoration: BoxDecoration(color: const Color(0xFF1C1C1E), borderRadius: BorderRadius.circular(12)),
                   header: const Text('IN-APP TAB BLOCKERS', style: TextStyle(color: Colors.white54)),
-                  footer: const Text('Blocks short-form content tabs (YouTube Shorts, Instagram Reels, Snapchat Spotlight, etc.) while keeping the rest of the application accessible.', style: TextStyle(color: Colors.white38, fontSize: 12)),
+                  footer: const Text('Blocks short-form content tabs (YouTube Shorts, Instagram Reels, Snapchat Spotlight, etc.) while keeping the rest of the application accessible. Turning a blocker on is instant — turning it off requires a challenge.', style: TextStyle(color: Colors.white38, fontSize: 12)),
                   children: _globalTabBlockers.isEmpty
                       ? [
                           CupertinoListTile(
@@ -409,8 +409,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             ),
                             trailing: CupertinoSwitch(
                               value: feature.isEnabled,
-                              onChanged: (val) =>
-                                  _confirmChange(() => _toggleBannedFeature(feature, val)),
+                              onChanged: (val) {
+                                if (val) {
+                                  _toggleBannedFeature(feature, val);
+                                } else {
+                                  _confirmChange(() => _toggleBannedFeature(feature, val));
+                                }
+                              },
                             ),
                           );
                         }).toList(),
@@ -493,7 +498,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       backgroundColor: Color(0xFF1C1C1E),
                       leading: Icon(CupertinoIcons.info_circle_fill, color: Colors.white38, size: 22),
                       title: Text('Version', style: TextStyle(color: Colors.white)),
-                      additionalInfo: Text('1.8.2 (Beta)', style: TextStyle(color: Colors.white54)),
+                      additionalInfo: Text('1.8.4 (Beta)', style: TextStyle(color: Colors.white54)),
                     ),
                   ],
                 ),

@@ -58,7 +58,9 @@ class UsageAccessibilityService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         try {
             val type = event?.eventType ?: return
-            if (type != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED && type != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) return
+            if (type != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
+                type != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED &&
+                type != AccessibilityEvent.TYPE_VIEW_SELECTED) return
 
             val pkg = event.packageName?.toString()?.trim() ?: return
             if (pkg == packageName || pkg.startsWith("com.android.") || pkg.startsWith("com.systemui")) return
@@ -72,14 +74,19 @@ class UsageAccessibilityService : AccessibilityService() {
             lastPkg = pkg
             lastCheck = now
 
-            checkAndBlock(pkg, event.className?.toString()?.trim(), event.source)
+            checkAndBlock(pkg, event.className?.toString()?.trim(), event.source, event.text)
             enforceVisiblePackages()
         } catch (e: Exception) {
             Log.e(TAG, "event error", e)
         }
     }
 
-    private fun checkAndBlock(pkg: String, className: String?, sourceNode: AccessibilityNodeInfo?) {
+    private fun checkAndBlock(
+        pkg: String,
+        className: String?,
+        sourceNode: AccessibilityNodeInfo?,
+        windowTitle: List<CharSequence>? = null,
+    ) {
         val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
 
         // 1) Check Standalone Global In-App Tab Blockers first (independent of App Groups)
@@ -95,6 +102,14 @@ class UsageAccessibilityService : AccessibilityService() {
                     if (banPkg.isNotEmpty() && banPkg != pkg) continue
 
                     val banName = ban.getString("name")
+
+                    // Window title match — many apps set the active
+                    // tab name as the window/activity title.
+                    if (titleMatchesKeywords(windowTitle, ban.optJSONArray("contentKeywords"))) {
+                        Log.i(TAG, "global ban (title): $banName in $pkg")
+                        blockApp(pkg, "In-App Feature", banName)
+                        return
+                    }
 
                     // Activity pattern regex match
                     if (className != null && ban.has("activityPattern")) {
@@ -162,6 +177,14 @@ class UsageAccessibilityService : AccessibilityService() {
                     }
 
                     val banName = ban.getString("name")
+
+                    // Window title match — many apps set the active
+                    // tab name as the window/activity title.
+                    if (titleMatchesKeywords(windowTitle, ban.optJSONArray("contentKeywords"))) {
+                        Log.i(TAG, "ban (title): $banName in $pkg")
+                        blockApp(pkg, groupName, banName)
+                        return
+                    }
 
                     // 1) Activity pattern regex match
                     if (className != null && ban.has("activityPattern")) {
@@ -279,7 +302,7 @@ class UsageAccessibilityService : AccessibilityService() {
             val isClickable = node.isClickable
             val isFocusable = node.isFocusable
             val isEdgeUi = isPositionedAtScreenEdge(node)
-            val isSelected = node.isSelected
+            val isSelected = node.isSelected || hasSelectedAncestor(node)
 
             // Skip entire nav-bar subtree (unless the nav item itself is the
             // selected/active tab — a selected tab means the user is currently
@@ -398,6 +421,45 @@ class UsageAccessibilityService : AccessibilityService() {
         }
         current?.recycle()
 
+        return false
+    }
+
+    /**
+     * Returns true if any ancestor of the node is selected.
+     * Tab bars typically set selection on the tab container (the
+     * clickable item) while the label text lives on a child view
+     * that is not selected itself — e.g. Snapchat's "Spotlight"
+     * tab. Without this, the child label is skipped and the
+     * active tab is never detected.
+     */
+    private fun hasSelectedAncestor(node: AccessibilityNodeInfo): Boolean {
+        var current = try { node.parent } catch (_: Exception) { null }
+        var levels = 0
+        while (current != null && levels < 8) {
+            val selected = current.isSelected
+            val next = try { current.parent } catch (_: Exception) { null }
+            current.recycle()
+            if (selected) return true
+            current = next
+            levels++
+        }
+        return false
+    }
+
+    /**
+     * Returns true if the window title (activity title, often the
+     * active tab name) contains any of the given keywords.
+     */
+    private fun titleMatchesKeywords(windowTitle: List<CharSequence>?, keywords: JSONArray?): Boolean {
+        if (windowTitle.isNullOrEmpty()) return false
+        val keywordsArr = keywords ?: return false
+        if (keywordsArr.length() == 0) return false
+        val title = windowTitle.joinToString(" ").toString().lowercase()
+        if (title.isEmpty()) return false
+        for (k in 0 until keywordsArr.length()) {
+            val kw = keywordsArr.optString(k, "").trim().lowercase()
+            if (kw.isNotEmpty() && title.contains(kw)) return true
+        }
         return false
     }
 
