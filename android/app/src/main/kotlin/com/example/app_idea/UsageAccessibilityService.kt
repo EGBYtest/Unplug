@@ -466,7 +466,7 @@ class UsageAccessibilityService : AccessibilityService() {
             removeOverlay()
             overlayGroup = group
             overlayFeature = feature
-            overlayCountdown = 3
+            overlayCountdown = 5
             overlayActive = true
 
             val ctx = applicationContext
@@ -508,7 +508,7 @@ class UsageAccessibilityService : AccessibilityService() {
                 gravity = Gravity.CENTER
             }
             val note = TextView(ctx).apply {
-                text = "Take three seconds before deciding\nif you really want more screen time."
+                text = "Take five seconds before deciding\nif you really want more screen time."
                 textSize = 13f
                 setTextColor(Color.parseColor("#8C8C8C"))
                 gravity = Gravity.CENTER
@@ -521,8 +521,16 @@ class UsageAccessibilityService : AccessibilityService() {
             root.addView(count)
             root.addView(note)
 
+            // TYPE_ACCESSIBILITY_OVERLAY is the system-sanctioned window
+            // type for overlays drawn by an AccessibilityService. OEM
+            // security suites (OxygenOS "suspicious app activity",
+            // MIUI, Samsung) flag ordinary TYPE_APPLICATION_OVERLAY
+            // windows combined with accessibility usage as suspicious
+            // and may auto-disable the service. Accessibility overlays
+            // are explicitly allowed and do not require the
+            // SYSTEM_ALERT_WINDOW permission.
             val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
             } else {
                 @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE
             }

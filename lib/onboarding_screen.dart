@@ -86,8 +86,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> with WidgetsBinding
     }
     if (m.contains('oppo') || m.contains('oneplus') || m.contains('realme')) {
       return 'Settings → Additional settings → Accessibility → Downloaded services → Unplug.\n\n'
-          'ColorOS/OxygenOS tip: lock Unplug in recent apps (tap the lock icon) '
-          'to prevent system from killing it.';
+          'ColorOS/OxygenOS tips:\n'
+          '• Lock Unplug in recent apps (tap the lock icon) to prevent system from killing it.\n'
+          '• If Phone Manager shows "suspicious app activity" when the lock screen '
+          'appears, tap the notification/alert and choose "Allow" / "Keep enabled" — '
+          'the lock screen is part of the accessibility service and is safe.';
     }
     if (m.contains('huawei') || m.contains('honor')) {
       return 'Settings → Accessibility features → Accessibility → Downloaded services → Unplug.\n\n'

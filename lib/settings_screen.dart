@@ -1,4 +1,3 @@
-import 'dart:ui';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -18,7 +17,6 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  bool _isUnlocked = false;
   bool _saving = false;
   final StorageService _storage = StorageService();
   final UsageTracker _tracker = UsageTracker();
@@ -34,18 +32,56 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _globalTabBlockers = List.from(_storage.loadGlobalTabBlockers());
     _adRewardSeconds = _storage.adRewardSeconds;
     _resetHour = _storage.resetHour;
-    if (!_storage.settingsLockEnabled) _isUnlocked = true;
   }
 
-  // ─── Unlock Logic ────────────────────────────────────────────────────────
+  // ─── Per-Change Challenge ─────────────────────────────────────────
 
-  void _unlockSettings() => setState(() => _isUnlocked = true);
-
-  void _watchAdToUnlock() {
-    AdRewardSystem().showRewardedAd(context, _unlockSettings, () {});
+  void _confirmChange(VoidCallback action) {
+    showCupertinoModalPopup(
+      context: context,
+      builder: (_) => CupertinoActionSheet(
+        title: const Text('Confirm Change'),
+        message: const Text('Complete a challenge to change this setting.'),
+        actions: [
+          CupertinoActionSheetAction(
+            onPressed: () {
+              Navigator.pop(context);
+              AdRewardSystem().showRewardedAd(context, action, () {});
+            },
+            child: const Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(CupertinoIcons.play_circle_fill, color: Color(0xFF0A84FF), size: 18),
+                SizedBox(width: 8),
+                Text('Wait 30s', style: TextStyle(fontWeight: FontWeight.bold)),
+              ],
+            ),
+          ),
+          CupertinoActionSheetAction(
+            onPressed: () {
+              Navigator.pop(context);
+              _typeToUnlock(action);
+            },
+            child: const Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(CupertinoIcons.pencil, color: Color(0xFF0A84FF), size: 18),
+                SizedBox(width: 8),
+                Text('Type 50 words', style: TextStyle(fontWeight: FontWeight.bold)),
+              ],
+            ),
+          ),
+        ],
+        cancelButton: CupertinoActionSheetAction(
+          isDestructiveAction: true,
+          child: const Text('Cancel'),
+          onPressed: () => Navigator.pop(context),
+        ),
+      ),
+    );
   }
 
-  void _showTypeChallenge() {
+  void _typeToUnlock(VoidCallback action) {
     final ctrl = TextEditingController();
     final target = MessageVerification().generateMessage();
 
@@ -60,7 +96,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               children: [
                 Icon(CupertinoIcons.pencil_outline, size: 18),
                 SizedBox(width: 6),
-                Text('Type to Unlock'),
+                Text('Type to Confirm'),
               ],
             ),
             content: Column(
@@ -100,7 +136,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 onPressed: () {
                   if (MessageVerification().verifyMessage(ctrl.text)) {
                     Navigator.pop(ctx);
-                    _unlockSettings();
+                    action();
                   } else {
                     showCupertinoDialog(
                       context: ctx,
@@ -264,8 +300,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await _storage.saveGlobalTabBlockers(_globalTabBlockers);
   }
 
-  // ─── Save & Lock ──────────────────────────────────────────────────────────
-  Future<void> _saveAndLock() async {
+  // ─── Save ──────────────────────────────────────────────────────────
+  Future<void> _save() async {
     setState(() => _saving = true);
     await _storage.saveGroups(_groups);
     await _storage.saveGlobalTabBlockers(_globalTabBlockers);
@@ -273,14 +309,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await _storage.saveResetHour(_resetHour);
     _tracker.appGroups = List.from(_groups);
 
-    // Auto-enable settings lock only once after first save
-    if (!_storage.settingsLockAutoEnabled) {
-      await _storage.setSettingsLockEnabled(true);
-      await _storage.setSettingsLockAutoEnabled();
-    }
-
     if (mounted) {
-      setState(() { _saving = false; _isUnlocked = _storage.settingsLockEnabled ? false : true; });
+      setState(() => _saving = false);
       Navigator.of(context).pop();
     }
   }
@@ -294,19 +324,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
         previousPageTitle: 'Dashboard',
         backgroundColor: const Color(0xFF0F0F0F).withOpacity(0.9),
         border: null,
-        trailing: _isUnlocked
-            ? CupertinoButton(
+        trailing: _saving
+            ? const CupertinoActivityIndicator()
+            : CupertinoButton(
                 padding: EdgeInsets.zero,
-                onPressed: _saving ? null : _saveAndLock,
-                child: _saving
-                    ? const CupertinoActivityIndicator()
-                    : const Text('Save', style: TextStyle(color: Color(0xFF30D158), fontWeight: FontWeight.bold)),
-              )
-            : null,
+                onPressed: _save,
+                child: const Text('Save', style: TextStyle(color: Color(0xFF30D158), fontWeight: FontWeight.bold)),
+              ),
       ),
-      child: Stack(
-        children: [
-          SafeArea(
+      child: SafeArea(
             child: ListView(
               children: [
                 // ── App Group Limits ──
@@ -327,20 +353,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         style: const TextStyle(color: Colors.white38, fontSize: 12),
                       ),
                       additionalInfo: Text(_formatMinutes(group.timeLimitMinutes + bonusSeconds ~/ 60), style: const TextStyle(color: Colors.white70)),
-                      trailing: _isUnlocked ? const CupertinoListTileChevron() : null,
-                      onTap: _isUnlocked ? () => _showGroupOptions(i) : null,
+                      trailing: const CupertinoListTileChevron(),
+                      onTap: () => _showGroupOptions(i),
                     );
                   }).toList(),
                 ),
 
                 // Add Group button
-                if (_isUnlocked)
-                  CupertinoListTile(
-                    backgroundColor: const Color(0xFF1C1C1E),
-                    leading: const Icon(CupertinoIcons.add_circled, color: Color(0xFF0A84FF), size: 22),
-                    title: const Text('Add Group', style: TextStyle(color: Colors.white)),
-                    onTap: _addGroup,
-                  ),
+                CupertinoListTile(
+                  backgroundColor: const Color(0xFF1C1C1E),
+                  leading: const Icon(CupertinoIcons.add_circled, color: Color(0xFF0A84FF), size: 22),
+                  title: const Text('Add Group', style: TextStyle(color: Colors.white)),
+                  onTap: () => _confirmChange(_addGroup),
+                ),
 
                 // ── In-App Tab Blockers ──
                 CupertinoListSection.insetGrouped(
@@ -355,12 +380,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             leading: const Icon(CupertinoIcons.arrow_counterclockwise, color: Color(0xFF0A84FF), size: 22),
                             title: const Text('Load Default Tab Blockers', style: TextStyle(color: Colors.white)),
                             subtitle: const Text('Tap to load YouTube Shorts, Instagram Reels & Snapchat Spotlight blockers', style: TextStyle(color: Colors.white38, fontSize: 12)),
-                            onTap: _isUnlocked
-                                ? () async {
-                                    final defaults = _storage.loadGlobalTabBlockers();
-                                    setState(() { _globalTabBlockers = defaults; });
-                                  }
-                                : null,
+                            onTap: () => _confirmChange(() async {
+                              final defaults = _storage.loadGlobalTabBlockers();
+                              setState(() { _globalTabBlockers = defaults; });
+                            }),
                           ),
                         ]
                       : _globalTabBlockers.map((feature) {
@@ -386,42 +409,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             ),
                             trailing: CupertinoSwitch(
                               value: feature.isEnabled,
-                              onChanged: _isUnlocked
-                                  ? (val) => _toggleBannedFeature(feature, val)
-                                  : null,
+                              onChanged: (val) =>
+                                  _confirmChange(() => _toggleBannedFeature(feature, val)),
                             ),
                           );
                         }).toList(),
                 ),
 
-                // ── Settings Lock Toggle ──
-                CupertinoListSection.insetGrouped(
-                  backgroundColor: Colors.black,
-                  decoration: BoxDecoration(color: const Color(0xFF1C1C1E), borderRadius: BorderRadius.circular(12)),
-                  header: const Text('SECURITY', style: TextStyle(color: Colors.white54)),
-                  children: [
-                    CupertinoListTile(
-                      backgroundColor: const Color(0xFF1C1C1E),
-                      leading: const Icon(CupertinoIcons.lock_fill, color: Color(0xFFFF9F0A), size: 22),
-                      title: const Text('Lock Settings', style: TextStyle(color: Colors.white)),
-                      subtitle: Text(
-                        _storage.settingsLockEnabled
-                            ? 'Challenge required to edit'
-                            : 'No lock on settings',
-                        style: const TextStyle(color: Colors.white38, fontSize: 12),
-                      ),
-                      trailing: CupertinoSwitch(
-                        value: _storage.settingsLockEnabled,
-                        onChanged: (val) async {
-                          await _storage.setSettingsLockEnabled(val);
-                          setState(() {
-                            if (!val) _isUnlocked = true;
-                          });
-                        },
-                      ),
-                    ),
-                  ],
-                ),
                 // ── Ad Ratio ──
                 CupertinoListSection.insetGrouped(
                   backgroundColor: Colors.black,
@@ -433,8 +427,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       leading: const Icon(CupertinoIcons.play_rectangle_fill, color: Color(0xFFFF9F0A), size: 22),
                       title: const Text('Reward per Ad', style: TextStyle(color: Colors.white)),
                       additionalInfo: Text(_formatSeconds(_adRewardSeconds), style: const TextStyle(color: Colors.white70)),
-                      trailing: _isUnlocked ? const CupertinoListTileChevron() : null,
-                      onTap: _isUnlocked ? () => _editAdRatio() : null,
+                      trailing: const CupertinoListTileChevron(),
+                      onTap: () => _confirmChange(_editAdRatio),
                     ),
                   ],
                 ),
@@ -451,8 +445,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       leading: const Icon(CupertinoIcons.moon_fill, color: Color(0xFF0A84FF), size: 22),
                       title: const Text('Reset Time', style: TextStyle(color: Colors.white)),
                       additionalInfo: Text('${_resetHour.toString().padLeft(2, '0')}:00', style: const TextStyle(color: Colors.white70)),
-                      trailing: _isUnlocked ? const CupertinoListTileChevron() : null,
-                      onTap: _isUnlocked ? () => _editResetHour() : null,
+                      trailing: const CupertinoListTileChevron(),
+                      onTap: () => _confirmChange(_editResetHour),
                     ),
                   ],
                 ),
@@ -499,85 +493,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       backgroundColor: Color(0xFF1C1C1E),
                       leading: Icon(CupertinoIcons.info_circle_fill, color: Colors.white38, size: 22),
                       title: Text('Version', style: TextStyle(color: Colors.white)),
-                      additionalInfo: Text('1.8.0 (Beta)', style: TextStyle(color: Colors.white54)),
+                      additionalInfo: Text('1.8.2 (Beta)', style: TextStyle(color: Colors.white54)),
                     ),
                   ],
                 ),
               ],
             ),
           ),
-
-          // ── Lock Overlay ──
-          if (!_isUnlocked)
-            Positioned.fill(
-              child: ClipRect(
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-                  child: Container(
-                    color: Colors.black.withOpacity(0.65),
-                    alignment: Alignment.center,
-                    padding: const EdgeInsets.all(32),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(22),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF2C2C2E).withOpacity(0.5),
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(CupertinoIcons.lock_shield_fill, size: 72, color: Colors.white),
-                        ),
-                        const SizedBox(height: 24),
-                        const Text('Settings Locked', style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800, color: Colors.white, letterSpacing: -0.5)),
-                        const SizedBox(height: 10),
-                        const Text('Complete a challenge to edit settings.', textAlign: TextAlign.center, style: TextStyle(color: Colors.white60, fontSize: 15)),
-                        const SizedBox(height: 44),
-                        SizedBox(
-                          width: double.infinity,
-                          child: Container(
-                            decoration: BoxDecoration(borderRadius: BorderRadius.circular(14), boxShadow: [BoxShadow(color: const Color(0xFF0A84FF).withOpacity(0.3), blurRadius: 20, offset: const Offset(0, 4))]),
-                            child: CupertinoButton(
-                              color: const Color(0xFF0A84FF),
-                              borderRadius: BorderRadius.circular(14),
-                              onPressed: _watchAdToUnlock,
-                              child: const Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(CupertinoIcons.play_circle_fill, color: Colors.white, size: 20),
-                                  SizedBox(width: 10),
-                                  Text('Wait 30s to Unlock', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 14),
-                        SizedBox(
-                          width: double.infinity,
-                          child: CupertinoButton(
-                            color: const Color(0xFF1C1C1E),
-                            borderRadius: BorderRadius.circular(14),
-                            onPressed: _showTypeChallenge,
-                            child: const Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(CupertinoIcons.pencil, color: Color(0xFF0A84FF), size: 20),
-                                SizedBox(width: 10),
-                                Text('Type 50 words to Unlock', style: TextStyle(color: Color(0xFF0A84FF), fontWeight: FontWeight.bold)),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
+        );
   }
 
   void _showGroupOptions(int index) {
@@ -591,35 +514,37 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ? Text('${_formatSeconds(bonusSeconds)} bonus time remaining', style: const TextStyle(color: Color(0xFF30D158), fontSize: 12))
             : null,
         actions: [
-          CupertinoActionSheetAction(child: const Text('Edit Time Limit'), onPressed: () { Navigator.pop(context); _editLimit(index); }),
-          CupertinoActionSheetAction(child: const Text('Edit Apps in Group'), onPressed: () { Navigator.pop(context); _editGroupApps(index); }),
+          CupertinoActionSheetAction(child: const Text('Edit Time Limit'), onPressed: () { Navigator.pop(context); _confirmChange(() => _editLimit(index)); }),
+          CupertinoActionSheetAction(child: const Text('Edit Apps in Group'), onPressed: () { Navigator.pop(context); _confirmChange(() => _editGroupApps(index)); }),
           if (bonusSeconds > 0)
             CupertinoActionSheetAction(
               isDestructiveAction: true,
               child: const Text('Remove Bonus Time'),
               onPressed: () {
                 Navigator.pop(context);
-                showCupertinoDialog(
-                  context: context,
-                  builder: (ctx) => CupertinoAlertDialog(
-                    title: const Text('Remove Bonus Time'),
-                    content: Text('Remove ${_formatSeconds(bonusSeconds)} bonus time from "${group.name}"?'),
-                    actions: [
-                      CupertinoDialogAction(child: const Text('Cancel'), onPressed: () => Navigator.pop(ctx)),
-                      CupertinoDialogAction(
-                        isDestructiveAction: true,
-                        child: const Text('Remove'),
-                        onPressed: () async {
-                          await _storage.resetBonusSeconds(group.name);
-                          if (ctx.mounted) Navigator.pop(ctx);
-                        },
-                      ),
-                    ],
-                  ),
-                );
+                _confirmChange(() {
+                  showCupertinoDialog(
+                    context: context,
+                    builder: (ctx) => CupertinoAlertDialog(
+                      title: const Text('Remove Bonus Time'),
+                      content: Text('Remove ${_formatSeconds(bonusSeconds)} bonus time from "${group.name}"?'),
+                      actions: [
+                        CupertinoDialogAction(child: const Text('Cancel'), onPressed: () => Navigator.pop(ctx)),
+                        CupertinoDialogAction(
+                          isDestructiveAction: true,
+                          child: const Text('Remove'),
+                          onPressed: () async {
+                            await _storage.resetBonusSeconds(group.name);
+                            if (ctx.mounted) Navigator.pop(ctx);
+                          },
+                        ),
+                      ],
+                    ),
+                  );
+                });
               },
             ),
-          CupertinoActionSheetAction(isDestructiveAction: true, child: const Text('Delete Group'), onPressed: () { Navigator.pop(context); _deleteGroup(index); }),
+          CupertinoActionSheetAction(isDestructiveAction: true, child: const Text('Delete Group'), onPressed: () { Navigator.pop(context); _confirmChange(() => _deleteGroup(index)); }),
         ],
         cancelButton: CupertinoActionSheetAction(isDestructiveAction: true, child: const Text('Cancel'), onPressed: () => Navigator.pop(context)),
       ),

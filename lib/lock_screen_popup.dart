@@ -27,7 +27,7 @@ class LockScreenPopup extends StatefulWidget {
 class _LockScreenPopupState extends State<LockScreenPopup> {
   bool _showOptions = false;
   bool _showTypeChallenge = false;
-  int _countdown = 3;
+  int _countdown = 5;
   final TextEditingController _textController = TextEditingController();
   int _wordCount = 0;
   static const int _targetWordCount = 50;
@@ -167,7 +167,7 @@ class _LockScreenPopupState extends State<LockScreenPopup> {
                         ),
                         const SizedBox(height: 12),
                         const Text(
-                          'Take three seconds before deciding\nif you really want more screen time.',
+                           'Take five seconds before deciding\nif you really want more screen time.',
                           textAlign: TextAlign.center,
                           style: TextStyle(color: Colors.white54, fontSize: 15, height: 1.4),
                         ),
