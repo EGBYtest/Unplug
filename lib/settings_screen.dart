@@ -534,7 +534,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       backgroundColor: Color(0xFF1C1C1E),
                       leading: Icon(CupertinoIcons.info_circle_fill, color: Colors.white38, size: 22),
                       title: Text('Version', style: TextStyle(color: Colors.white)),
-                      additionalInfo: Text('1.8.5 (Beta)', style: TextStyle(color: Colors.white54)),
+                      additionalInfo: Text('1.8.6 (Beta)', style: TextStyle(color: Colors.white54)),
                     ),
                   ],
                 ),

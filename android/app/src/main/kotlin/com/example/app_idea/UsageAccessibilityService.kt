@@ -113,6 +113,7 @@ class UsageAccessibilityService : AccessibilityService() {
                     if (detectFeature(pkg, ban, className, windowTitle, sourceNode, tapEvent)) {
                         Log.i(TAG, "global ban: $banName in $pkg")
                         blockApp(pkg, "In-App Feature", banName)
+                        scheduleFeatureRecheck(pkg, keywordsOf(ban), "In-App Feature", banName)
                         return
                     }
                 }
@@ -153,6 +154,7 @@ class UsageAccessibilityService : AccessibilityService() {
                     if (detectFeature(pkg, ban, className, windowTitle, sourceNode, tapEvent)) {
                         Log.i(TAG, "ban (feature): $banName in $pkg ($groupName)")
                         blockApp(pkg, groupName, banName)
+                        scheduleFeatureRecheck(pkg, keywordsOf(ban), groupName, banName)
                         return
                     }
                 }
@@ -215,12 +217,7 @@ class UsageAccessibilityService : AccessibilityService() {
         sourceNode: AccessibilityNodeInfo?,
         tapEvent: Boolean,
     ): Boolean {
-        val kwJson = ban.optJSONArray("contentKeywords")
-        val keywords = if (kwJson != null) {
-            (0 until kwJson.length()).mapNotNull {
-                kwJson.optString(it, "").trim().lowercase().ifEmpty { null }
-            }
-        } else emptyList()
+        val keywords = keywordsOf(ban)
         val pattern = ban.optString("activityPattern", "").trim()
         if (keywords.isEmpty() && pattern.isEmpty()) return false
 
@@ -251,7 +248,35 @@ class UsageAccessibilityService : AccessibilityService() {
             }
         } catch (_: Exception) {}
 
-        // 5) View-hierarchy scan
+        // 5) Changed-subtree fast path — the view that fired
+        //    the event is often the newly visible page itself
+        //    (swipes, fragment swaps, pager transitions).
+        if (sourceNode != null) {
+            if (scanNodeTree(sourceNode, keywords)) return true
+        }
+
+        // 6) Full view-hierarchy scan
+        return scanVisibleTrees(pkg, keywords)
+    }
+
+    /**
+     * Extracts the (lowercased) content keywords from a
+     * blocker config object.
+     */
+    private fun keywordsOf(ban: JSONObject): List<String> {
+        val kwJson = ban.optJSONArray("contentKeywords")
+        return if (kwJson != null) {
+            (0 until kwJson.length()).mapNotNull {
+                kwJson.optString(it, "").trim().lowercase().ifEmpty { null }
+            }
+        } else emptyList()
+    }
+
+    /**
+     * Scans the active window and all visible windows that
+     * belong to the given package for the feature keywords.
+     */
+    private fun scanVisibleTrees(pkg: String, keywords: List<String>): Boolean {
         try {
             val activeRoot = rootInActiveWindow
             if (activeRoot != null) {
@@ -276,8 +301,52 @@ class UsageAccessibilityService : AccessibilityService() {
         } catch (e: Exception) {
             Log.i(TAG, "tree scan error: ${e.message}")
         }
-
         return false
+    }
+
+    // ─── Post-transition recheck ───────────────────────────────
+    //
+    // A single BACK press can lose the race with a page
+    // transition (tab click / swipe) — the blocked tab
+    // sometimes still opens. After every feature block we
+    // re-scan the visible trees ~400ms later, once the
+    // transition has settled, and press BACK again if the
+    // blocked feature is still showing. Repeated a couple of
+    // times for slow transitions. The app is never closed —
+    // only the back button is used.
+
+    private val recheckHandler = Handler(Looper.getMainLooper())
+    private var recheckAttempts = 0
+    private var recheckPkg = ""
+    private var recheckGroup = ""
+    private var recheckFeature = ""
+    private var recheckKeywords: List<String>? = null
+
+    private fun scheduleFeatureRecheck(pkg: String, keywords: List<String>, group: String, feature: String) {
+        recheckHandler.removeCallbacksAndMessages(null)
+        recheckAttempts = 0
+        recheckPkg = pkg
+        recheckGroup = group
+        recheckFeature = feature
+        recheckKeywords = keywords
+        recheckHandler.postDelayed(featureRecheck, 400)
+    }
+
+    private val featureRecheck = object : Runnable {
+        override fun run() {
+            val keywords = recheckKeywords
+            if (keywords.isNullOrEmpty()) return
+            try {
+                if (scanVisibleTrees(recheckPkg, keywords)) {
+                    Log.i(TAG, "recheck #$recheckAttempts: still on $recheckFeature — backing out")
+                    blockApp(recheckPkg, recheckGroup, recheckFeature)
+                    if (recheckAttempts < 2) {
+                        recheckAttempts++
+                        recheckHandler.postDelayed(this, 400)
+                    }
+                }
+            } catch (_: Exception) {}
+        }
     }
 
     /**
@@ -530,13 +599,8 @@ class UsageAccessibilityService : AccessibilityService() {
         performGlobalAction(GLOBAL_ACTION_BACK)
 
         if (feature != null) {
-            if (aggressive) {
-                val home = Intent(Intent.ACTION_MAIN).apply {
-                    addCategory(Intent.CATEGORY_HOME)
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                }
-                startActivity(home)
-            }
+            // In-app feature blocks only ever use the back
+            // button — the app itself is never closed.
             return
         }
 
@@ -725,6 +789,7 @@ class UsageAccessibilityService : AccessibilityService() {
     }
 
     override fun onDestroy() {
+        recheckHandler.removeCallbacksAndMessages(null)
         removeOverlay()
         super.onDestroy()
     }
