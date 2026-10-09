@@ -5,11 +5,11 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.content.Intent
 import android.content.Context
-import android.app.ActivityManager
 import android.app.usage.UsageStatsManager
 import android.util.Log
 import android.content.SharedPreferences
 import org.json.JSONArray
+import org.json.JSONObject
 import java.util.Calendar
 import android.os.Build
 import android.os.Handler
@@ -60,21 +60,27 @@ class UsageAccessibilityService : AccessibilityService() {
             val type = event?.eventType ?: return
             if (type != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
                 type != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED &&
-                type != AccessibilityEvent.TYPE_VIEW_SELECTED) return
+                type != AccessibilityEvent.TYPE_VIEW_SELECTED &&
+                type != AccessibilityEvent.TYPE_VIEW_CLICKED) return
 
             val pkg = event.packageName?.toString()?.trim() ?: return
             if (pkg == packageName || pkg.startsWith("com.android.") || pkg.startsWith("com.systemui")) return
 
-            Log.i(TAG, "event: $pkg")
+            Log.i(TAG, "event: $pkg (type=$type)")
 
-
-            // Throttle events per package to 200ms for smooth performance without missing tab/content changes
+            // Tab activation events (selected/clicked) bypass the
+            // throttle — they are the strongest detection signal and
+            // must never be dropped by the 200ms content-change filter.
+            val isTap = type == AccessibilityEvent.TYPE_VIEW_SELECTED ||
+                        type == AccessibilityEvent.TYPE_VIEW_CLICKED
             val now = System.currentTimeMillis()
-            if (pkg == lastPkg && now - lastCheck < 200) return
+            if (!isTap && pkg == lastPkg && now - lastCheck < 200) return
             lastPkg = pkg
             lastCheck = now
 
-            checkAndBlock(pkg, event.className?.toString()?.trim(), event.source, event.text)
+            val source = event.source
+            checkAndBlock(pkg, event.className?.toString()?.trim(), source, event.text, isTap)
+            source?.recycle()
             enforceVisiblePackages()
         } catch (e: Exception) {
             Log.e(TAG, "event error", e)
@@ -85,11 +91,12 @@ class UsageAccessibilityService : AccessibilityService() {
         pkg: String,
         className: String?,
         sourceNode: AccessibilityNodeInfo?,
-        windowTitle: List<CharSequence>? = null,
+        windowTitle: List<CharSequence>?,
+        tapEvent: Boolean,
     ) {
         val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
 
-        // 1) Check Standalone Global In-App Tab Blockers first (independent of App Groups)
+        // 1) Standalone Global In-App Tab Blockers (independent of App Groups)
         val globalBlockersJson = prefs.getString("flutter.global_tab_blockers", "[]") ?: "[]"
         if (globalBlockersJson != "[]") {
             try {
@@ -102,45 +109,10 @@ class UsageAccessibilityService : AccessibilityService() {
                     if (banPkg.isNotEmpty() && banPkg != pkg) continue
 
                     val banName = ban.getString("name")
-
-                    // Window title match — many apps set the active
-                    // tab name as the window/activity title.
-                    if (titleMatchesKeywords(windowTitle, ban.optJSONArray("contentKeywords"))) {
-                        Log.i(TAG, "global ban (title): $banName in $pkg")
+                    if (detectFeature(pkg, ban, className, windowTitle, sourceNode, tapEvent)) {
+                        Log.i(TAG, "global ban: $banName in $pkg")
                         blockApp(pkg, "In-App Feature", banName)
                         return
-                    }
-
-                    // Activity pattern regex match
-                    if (className != null && ban.has("activityPattern")) {
-                        val pattern = ban.getString("activityPattern")
-                        if (pattern.isNotEmpty()) {
-                            try {
-                                if (className.matches(Regex(pattern, RegexOption.IGNORE_CASE))) {
-                                    Log.i(TAG, "global ban (activity): $banName in $pkg")
-                                    blockApp(pkg, "In-App Feature", banName)
-                                    return
-                                }
-                            } catch (_: Exception) {}
-                        }
-                    }
-
-                    // Content keyword match across view hierarchy
-                    if (ban.has("contentKeywords")) {
-                        val keywords = ban.getJSONArray("contentKeywords")
-                        if (keywords.length() > 0) {
-                            val keywordList = mutableListOf<String>()
-                            for (k in 0 until keywords.length()) {
-                                val kw = keywords.getString(k).trim().lowercase()
-                                if (kw.isNotEmpty()) keywordList.add(kw)
-                            }
-
-                            if (keywordList.isNotEmpty() && scanForContentKeywords(pkg, keywordList)) {
-                                Log.i(TAG, "global ban (content match!): $banName in $pkg — keywords=$keywordList")
-                                blockApp(pkg, "In-App Feature", banName)
-                                return
-                            }
-                        }
                     }
                 }
             } catch (e: Exception) {
@@ -177,45 +149,10 @@ class UsageAccessibilityService : AccessibilityService() {
                     }
 
                     val banName = ban.getString("name")
-
-                    // Window title match — many apps set the active
-                    // tab name as the window/activity title.
-                    if (titleMatchesKeywords(windowTitle, ban.optJSONArray("contentKeywords"))) {
-                        Log.i(TAG, "ban (title): $banName in $pkg")
+                    if (detectFeature(pkg, ban, className, windowTitle, sourceNode, tapEvent)) {
+                        Log.i(TAG, "ban (feature): $banName in $pkg ($groupName)")
                         blockApp(pkg, groupName, banName)
                         return
-                    }
-
-                    // 1) Activity pattern regex match
-                    if (className != null && ban.has("activityPattern")) {
-                        val pattern = ban.getString("activityPattern")
-                        if (pattern.isNotEmpty()) {
-                            try {
-                                if (className.matches(Regex(pattern, RegexOption.IGNORE_CASE))) {
-                                    Log.i(TAG, "ban (activity): $banName in $pkg")
-                                    blockApp(pkg, groupName, banName)
-                                    return
-                                }
-                            } catch (_: Exception) {}
-                        }
-                    }
-
-                    // 2) Content keyword match across view hierarchy
-                    if (ban.has("contentKeywords")) {
-                        val keywords = ban.getJSONArray("contentKeywords")
-                        if (keywords.length() > 0) {
-                            val keywordList = mutableListOf<String>()
-                            for (k in 0 until keywords.length()) {
-                                val kw = keywords.getString(k).trim().lowercase()
-                                if (kw.isNotEmpty()) keywordList.add(kw)
-                            }
-
-                            if (keywordList.isNotEmpty() && scanForContentKeywords(pkg, keywordList)) {
-                                Log.i(TAG, "ban (content match!): $banName in $pkg — keywords=$keywordList")
-                                blockApp(pkg, groupName, banName)
-                                return
-                            }
-                        }
                     }
                 }
             }
@@ -253,44 +190,167 @@ class UsageAccessibilityService : AccessibilityService() {
         }
     }
 
-    /**
-     * Scans the accessibility node tree for content keywords.
-     * Searches rootInActiveWindow first, then visible windows.
-     */
-    private fun scanForContentKeywords(pkg: String, keywords: List<String>): Boolean {
+    // ─── In-app feature detection ─────────────────────────────────────────
+    //
+    // Multi-signal detector for short-form content tabs (Snapchat
+    // Spotlight, YouTube Shorts, Instagram Reels, ...). Signals,
+    // strongest first:
+    //
+    // 1. Tap events — TYPE_VIEW_SELECTED / TYPE_VIEW_CLICKED deliver
+    //    the exact view the user just activated. No guessing needed.
+    // 2. Activity / class-name regex (activityPattern from config).
+    // 3. Window title of the event — many apps title the screen after
+    //    the active tab.
+    // 4. Titles of all visible accessibility windows.
+    // 5. View-hierarchy scan — selected-tab state (with ancestor
+    //    propagation), feature-specific class names, resource IDs and
+    //    visible non-navigation text.
+
+    private fun detectFeature(
+        pkg: String,
+        ban: JSONObject,
+        className: String?,
+        windowTitle: List<CharSequence>?,
+        sourceNode: AccessibilityNodeInfo?,
+        tapEvent: Boolean,
+    ): Boolean {
+        val kwJson = ban.optJSONArray("contentKeywords")
+        val keywords = if (kwJson != null) {
+            (0 until kwJson.length()).mapNotNull {
+                kwJson.optString(it, "").trim().lowercase().ifEmpty { null }
+            }
+        } else emptyList()
+        val pattern = ban.optString("activityPattern", "").trim()
+        if (keywords.isEmpty() && pattern.isEmpty()) return false
+
+        // 1) Tap fast path — the view that was just selected / clicked
+        if (tapEvent && sourceNode != null) {
+            if (nodeMatchesFeature(sourceNode, keywords, forTap = true, depth = 0)) return true
+        }
+
+        // 2) Activity / class-name pattern
+        if (className != null && pattern.isNotEmpty()) {
+            try {
+                if (className.matches(Regex(pattern, RegexOption.IGNORE_CASE))) return true
+            } catch (_: Exception) {}
+        }
+
+        // 3) Event window title
+        if (titleMatches(windowTitle, keywords)) return true
+
+        // 4) Titles of all visible windows
         try {
-            // 1. Try rootInActiveWindow
+            val windowList = windows ?: emptyList()
+            for (w in windowList) {
+                val title = w.title?.toString()?.lowercase() ?: continue
+                if (keywords.any { title.contains(it) }) {
+                    Log.i(TAG, "Matched window title: '$title'")
+                    return true
+                }
+            }
+        } catch (_: Exception) {}
+
+        // 5) View-hierarchy scan
+        try {
             val activeRoot = rootInActiveWindow
             if (activeRoot != null) {
                 val rootPkg = activeRoot.packageName?.toString()?.trim() ?: ""
                 if (rootPkg == pkg || rootPkg.isEmpty()) {
-                    if (scanNodeTree(activeRoot, keywords)) return true
+                    val found = scanNodeTree(activeRoot, keywords)
+                    activeRoot.recycle()
+                    if (found) return true
+                } else {
+                    activeRoot.recycle()
                 }
             }
-
-            // 2. Try window tree fallback
             val windowList = windows ?: emptyList()
             for (w in windowList) {
                 val root = w.root ?: continue
                 val rootPkg = root.packageName?.toString()?.trim() ?: continue
-                if (rootPkg == pkg) {
-                    if (scanNodeTree(root, keywords)) return true
-                }
+                if (rootPkg != pkg) { root.recycle(); continue }
+                val found = scanNodeTree(root, keywords)
+                root.recycle()
+                if (found) return true
             }
         } catch (e: Exception) {
-            Log.i(TAG, "scanForContentKeywords error: ${e.message}")
+            Log.i(TAG, "tree scan error: ${e.message}")
         }
+
         return false
     }
 
     /**
-     * Recursively inspects nodes for keyword matches in text, contentDescription,
-     * viewIdResourceName, or className.
-     * Skips text/desc matching on navigation-bar child nodes to avoid blocking
-     * entire apps when tab labels happen to contain a keyword (e.g. "spotlight").
+     * Matches a single node (the view that was just selected or
+     * clicked) against the feature keywords.
+     *
+     * Structural identifiers (view ID resource name, class name) are
+     * developer-defined and unique to the feature, so they always
+     * match. Text / description only match inside navigation regions
+     * (screen edges) or on selected nodes — tapping an ordinary
+     * "Watch this!" link in the middle of content must not trigger a
+     * block.
+     */
+    private fun nodeMatchesFeature(
+        node: AccessibilityNodeInfo,
+        keywords: List<String>,
+        forTap: Boolean,
+        depth: Int,
+    ): Boolean {
+        if (depth > 5) return false
+        try {
+            val viewId = node.viewIdResourceName?.toString()?.lowercase() ?: ""
+            val cls = node.className?.toString()?.lowercase() ?: ""
+            val text = node.text?.toString()?.lowercase() ?: ""
+            val desc = node.contentDescription?.toString()?.lowercase() ?: ""
+
+            for (kw in keywords) {
+                if (viewId.contains(kw) || cls.contains(kw)) return true
+                if (text.contains(kw) || desc.contains(kw)) {
+                    val inNavRegion = isPositionedAtScreenEdge(node)
+                    if (!forTap || inNavRegion || node.isSelected || hasSelectedAncestor(node)) {
+                        Log.i(TAG, "Matched tap node text: '$kw'")
+                        return true
+                    }
+                }
+            }
+
+            val count = node.childCount
+            for (i in 0 until count) {
+                val child = node.getChild(i) ?: continue
+                val found = nodeMatchesFeature(child, keywords, forTap, depth + 1)
+                child.recycle()
+                if (found) return true
+            }
+        } catch (_: Exception) {}
+        return false
+    }
+
+    private fun titleMatches(windowTitle: List<CharSequence>?, keywords: List<String>): Boolean {
+        if (windowTitle.isNullOrEmpty() || keywords.isEmpty()) return false
+        val title = windowTitle.joinToString(" ").toString().lowercase()
+        if (title.isEmpty()) return false
+        return keywords.any { title.contains(it) }
+    }
+
+    /**
+     * Recursively scans the view hierarchy for the feature.
+     *
+     * A node counts as the active feature when:
+     * - it or any ancestor is SELECTED — tab bars set selection on the
+     *   tab container while the label lives on a child view, so the
+     *   selected state must propagate down the tree (Snapchat's
+     *   Spotlight tab is exactly this shape), or
+     * - its class name references the feature (reel / shorts player
+     *   classes) and it is visible on screen, or
+     * - its resource ID matches on a non-interactive node, or
+     * - its text matches on a visible, non-interactive node outside
+     *   the navigation bars.
+     *
+     * Unselected navigation labels and off-screen (ViewPager-preloaded)
+     * nodes are ignored so the rest of the app stays usable.
      */
     private fun scanNodeTree(node: AccessibilityNodeInfo?, keywords: List<String>, depth: Int = 0): Boolean {
-        if (node == null || depth > 25) return false
+        if (node == null || depth > 30 || keywords.isEmpty()) return false
 
         try {
             val nodeText = node.text?.toString()?.lowercase() ?: ""
@@ -298,66 +358,52 @@ class UsageAccessibilityService : AccessibilityService() {
             val nodeViewId = node.viewIdResourceName?.toString()?.lowercase() ?: ""
             val nodeClass = node.className?.toString()?.lowercase() ?: ""
 
-            val isNavChild = isNavBarDescendant(node)
-            val isClickable = node.isClickable
-            val isFocusable = node.isFocusable
+            val selected = node.isSelected || hasSelectedAncestor(node)
+            val visible = node.isVisibleToUser
+            val isNav = isNavBarDescendant(node)
             val isEdgeUi = isPositionedAtScreenEdge(node)
-            val isSelected = node.isSelected || hasSelectedAncestor(node)
 
-            // Skip entire nav-bar subtree (unless the nav item itself is the
-            // selected/active tab — a selected tab means the user is currently
-            // on that feature, e.g. Snapchat's "Spotlight" tab).
-            if (isNavChild && !isSelected) return false
-
-            for (kw in keywords) {
-                // Selected node: the user is actively on this feature, so match
-                // text/desc/viewId without the interactive-element skips. This
-                // catches labeled nav tabs (Snapchat Spotlight) and selected
-                // toolbar items that the conservative rules would otherwise miss.
-                if (isSelected) {
-                    if (nodeViewId.isNotEmpty() && nodeViewId.contains(kw)) {
-                        Log.i(TAG, "Matched selected viewId: '$kw' in '$nodeViewId'")
+            if (selected) {
+                // Active tab / feature — match everything on it.
+                for (kw in keywords) {
+                    if (nodeViewId.contains(kw) || nodeClass.contains(kw) ||
+                        nodeText.contains(kw) || nodeDesc.contains(kw)) {
+                        Log.i(TAG, "Matched selected node: '$kw'")
                         return true
                     }
-                    if (nodeClass.isNotEmpty() && nodeClass.contains(kw)) {
-                        Log.i(TAG, "Matched selected className: '$kw' in '$nodeClass'")
-                        return true
-                    }
-                    if ((nodeText.isNotEmpty() && nodeText.contains(kw)) || (nodeDesc.isNotEmpty() && nodeDesc.contains(kw))) {
-                        Log.i(TAG, "Matched selected text/desc: '$kw' (text='$nodeText', desc='$nodeDesc')")
-                        return true
-                    }
-                    // No match on this selected node — keep scanning its children.
-                } else {
-                    // Check view ID resource name — skip clickable/focusable nodes
-                    // (tabs/buttons) whose IDs happen to contain a keyword.
-                    if (!isClickable && !isFocusable && nodeViewId.isNotEmpty() && nodeViewId.contains(kw)) {
-                        Log.i(TAG, "Matched viewId: '$kw' in '$nodeViewId'")
-                        return true
-                    }
-
-                    // Check class name (e.g. com.google.android.apps.youtube.app.extensions.reel...)
-                    if (nodeClass.isNotEmpty() && nodeClass.contains(kw)) {
+                }
+            } else {
+                for (kw in keywords) {
+                    // Feature-specific player classes only exist while
+                    // the feature is on screen.
+                    if (visible && nodeClass.isNotEmpty() && nodeClass.contains(kw)) {
                         Log.i(TAG, "Matched className: '$kw' in '$nodeClass'")
                         return true
                     }
-
-                    // Check text or content description — skip interactive elements
-                    // and edge-positioned elements (bottom nav labels, action bar titles).
-                    if (!isClickable && !isFocusable && !isEdgeUi) {
-                        if ((nodeText.isNotEmpty() && nodeText.contains(kw)) || (nodeDesc.isNotEmpty() && nodeDesc.contains(kw))) {
-                            Log.i(TAG, "Matched text/desc: '$kw' (text='$nodeText', desc='$nodeDesc')")
+                    // Resource IDs on non-interactive nodes (containers,
+                    // labels) are stable feature identifiers.
+                    if (visible && !node.isClickable && !node.isFocusable &&
+                        nodeViewId.isNotEmpty() && nodeViewId.contains(kw)) {
+                        Log.i(TAG, "Matched viewId: '$kw' in '$nodeViewId'")
+                        return true
+                    }
+                    // Plain text only when visible, non-interactive and
+                    // outside the navigation bars.
+                    if (visible && !node.isClickable && !node.isFocusable && !isNav && !isEdgeUi) {
+                        if (nodeText.contains(kw) || nodeDesc.contains(kw)) {
+                            Log.i(TAG, "Matched text/desc: '$kw'")
                             return true
                         }
                     }
                 }
             }
 
-            // Recurse into children
             val count = node.childCount
             for (i in 0 until count) {
                 val child = node.getChild(i) ?: continue
-                if (scanNodeTree(child, keywords, depth + 1)) return true
+                val found = scanNodeTree(child, keywords, depth + 1)
+                child.recycle()
+                if (found) return true
             }
         } catch (_: Exception) {}
 
@@ -365,9 +411,29 @@ class UsageAccessibilityService : AccessibilityService() {
     }
 
     /**
+     * Returns true if any ancestor of the node is selected.
+     * Tab bars typically set selection on the tab container (the
+     * clickable item) while the label text lives on a child view that
+     * is not selected itself — e.g. Snapchat's "Spotlight" tab.
+     */
+    private fun hasSelectedAncestor(node: AccessibilityNodeInfo): Boolean {
+        var current = try { node.parent } catch (_: Exception) { null }
+        var levels = 0
+        while (current != null && levels < 8) {
+            val selected = current.isSelected
+            val next = try { current.parent } catch (_: Exception) { null }
+            current.recycle()
+            if (selected) return true
+            current = next
+            levels++
+        }
+        return false
+    }
+
+    /**
      * Returns true if the node is positioned at the top or bottom edge
-     * of the screen and is small enough to be a navigation / action-bar element
-     * rather than content.
+     * of the screen and is small enough to be a navigation / action-bar
+     * element rather than content.
      */
     private fun isPositionedAtScreenEdge(node: AccessibilityNodeInfo): Boolean {
         try {
@@ -385,9 +451,9 @@ class UsageAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * Returns true if the node is a descendant of a navigation bar, toolbar,
-     * or tab container — meaning its text/desc likely represents a nav label
-     * rather than content.
+     * Returns true if the node is a descendant of a navigation bar,
+     * toolbar, or tab container — meaning its text/desc likely
+     * represents a nav label rather than content.
      */
     private fun isNavBarDescendant(node: AccessibilityNodeInfo): Boolean {
         val navClassPatterns = listOf(
@@ -421,45 +487,6 @@ class UsageAccessibilityService : AccessibilityService() {
         }
         current?.recycle()
 
-        return false
-    }
-
-    /**
-     * Returns true if any ancestor of the node is selected.
-     * Tab bars typically set selection on the tab container (the
-     * clickable item) while the label text lives on a child view
-     * that is not selected itself — e.g. Snapchat's "Spotlight"
-     * tab. Without this, the child label is skipped and the
-     * active tab is never detected.
-     */
-    private fun hasSelectedAncestor(node: AccessibilityNodeInfo): Boolean {
-        var current = try { node.parent } catch (_: Exception) { null }
-        var levels = 0
-        while (current != null && levels < 8) {
-            val selected = current.isSelected
-            val next = try { current.parent } catch (_: Exception) { null }
-            current.recycle()
-            if (selected) return true
-            current = next
-            levels++
-        }
-        return false
-    }
-
-    /**
-     * Returns true if the window title (activity title, often the
-     * active tab name) contains any of the given keywords.
-     */
-    private fun titleMatchesKeywords(windowTitle: List<CharSequence>?, keywords: JSONArray?): Boolean {
-        if (windowTitle.isNullOrEmpty()) return false
-        val keywordsArr = keywords ?: return false
-        if (keywordsArr.length() == 0) return false
-        val title = windowTitle.joinToString(" ").toString().lowercase()
-        if (title.isEmpty()) return false
-        for (k in 0 until keywordsArr.length()) {
-            val kw = keywordsArr.optString(k, "").trim().lowercase()
-            if (kw.isNotEmpty() && title.contains(kw)) return true
-        }
         return false
     }
 
@@ -502,18 +529,18 @@ class UsageAccessibilityService : AccessibilityService() {
             performGlobalAction(GLOBAL_ACTION_BACK)
         }
 
-        // Full-screen OS overlay with an unclosable 3s countdown. After the
-        // countdown the Flutter lock screen (options) is shown as an
+        // Full-screen OS overlay with an unclosable countdown. When the
+        // countdown finishes the Flutter lock screen is launched as an
         // overlay-typed window so it covers whatever app is beneath.
         showCountdownOverlay(group, feature ?: "")
     }
 
     /**
-     * Adds a full-screen, touch-blocking overlay window (SYSTEM_ALERT_WINDOW)
-     * with a 3-2-1 countdown. Back is consumed while it is visible; the overlay
-     * itself cannot be dismissed because it sits above every app and the
-     * launcher. When the countdown finishes the Flutter lock screen is
-     * launched with the countdown skipped.
+     * Adds a full-screen, touch-blocking overlay window with a countdown.
+     * Back is consumed while it is visible; the overlay itself cannot be
+     * dismissed because it sits above every app and the launcher. When the
+     * countdown finishes the Flutter lock screen is launched with the
+     * countdown skipped.
      */
     private fun showCountdownOverlay(group: String, feature: String) {
         try {
@@ -585,12 +612,10 @@ class UsageAccessibilityService : AccessibilityService() {
 
             // TYPE_ACCESSIBILITY_OVERLAY is the system-sanctioned window
             // type for overlays drawn by an AccessibilityService. OEM
-            // security suites (OxygenOS "suspicious app activity",
-            // MIUI, Samsung) flag ordinary TYPE_APPLICATION_OVERLAY
+            // security suites flag ordinary TYPE_APPLICATION_OVERLAY
             // windows combined with accessibility usage as suspicious
             // and may auto-disable the service. Accessibility overlays
-            // are explicitly allowed and do not require the
-            // SYSTEM_ALERT_WINDOW permission.
+            // are explicitly allowed and need no SYSTEM_ALERT_WINDOW.
             val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
             } else {
