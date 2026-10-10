@@ -18,8 +18,8 @@ class UpdateChecker {
   static const _githubApi = 'https://api.github.com/repos/EGBYtest/Unplug/releases/latest';
   static const _githubFallback = 'https://raw.githubusercontent.com/EGBYtest/Unplug/main/VERSION';
   static const _counterApi = 'https://api.counterapi.dev/v1/unplug/version_build/';
-  static const _currentVersion = '1.18.2';
-  static const _currentBuild = 19;
+  static const _currentVersion = '1.0.0';
+  static const _currentBuild = 26;
 
   static UpdateInfo? cachedUpdate;
 
@@ -53,7 +53,7 @@ class UpdateChecker {
     try {
       final client = HttpClient();
       client.connectionTimeout = const Duration(seconds: 5);
-      client.userAgent = 'Unplug/1.8.0';
+      client.userAgent = 'Unplug/1.0.0';
 
       final request = await client.getUrl(Uri.parse(url));
       final response = await request.close();
@@ -97,7 +97,7 @@ class UpdateChecker {
     try {
       final client = HttpClient();
       client.connectionTimeout = const Duration(seconds: 5);
-      client.userAgent = 'Unplug/1.8.0';
+      client.userAgent = 'Unplug/1.0.0';
 
       final request = await client.getUrl(Uri.parse(_counterApi));
       final response = await request.close();
@@ -153,7 +153,7 @@ class UpdateChecker {
         Uri.parse('https://140.82.121.5/repos/EGBYtest/Unplug/releases/latest'),
       );
       request.headers.set('Host', 'api.github.com');
-      request.headers.set('User-Agent', 'Unplug/1.7.0');
+      request.headers.set('User-Agent', 'Unplug/1.0.0');
       final response = await request.close();
 
       log('UpdateChecker: IP direct HTTP ${response.statusCode}');

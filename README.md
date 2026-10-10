@@ -14,6 +14,77 @@
   </a>
 </p>
 
+<p align="center">
+  <strong>Version 1.0.0 — first official release</strong>
+</p>
+
+---
+
+## ⚠️ PLEASE READ FIRST — IMPORTANT WARNINGS ⚠️
+
+**Unplug is a new, unknown app. It is NOT on Google Play. Your phone WILL warn you about it — repeatedly. This is expected. Read this section before installing.**
+
+### Why your phone will flag this app
+
+When you install and set up Unplug, you will very likely see one or more of the following warnings. **All of them are normal for a new side-loaded app, but you should understand what each one means before proceeding:**
+
+1. **"Install unknown apps" / "Unknown app" during installation**
+   - Unplug is distributed as an APK from GitHub Releases, not from Google Play.
+   - Android requires you to explicitly allow your browser or file manager to install apps from outside the Play Store.
+   - Only download the APK from the official Releases page: `https://github.com/EGBYtest/Unplug/releases`. Never install an "Unplug" APK sent to you by anyone else or hosted on a random site.
+
+2. **Google Play Protect warnings ("Unknown app", "May be unsafe", "Blocked by Play Protect")**
+   - Play Protect flags apps it has never seen before. Since Unplug is new and has very few installs, it has no reputation with Google, so it gets flagged automatically.
+   - This warning says Google **cannot verify** the app — it does **not** mean malware was found.
+   - How to stay safe anyway: verify you downloaded it from the official GitHub Releases page, check that the release is published by the repository owner, and optionally compare the SHA-1 checksum published alongside the APK.
+
+3. **Accessibility Service warning ("This app can read your screen", "Full control of your device", "Can observe your actions")**
+   - **Unplug cannot work without the Accessibility Service. This is its core function, not an optional extra.**
+   - Android shows a very scary system dialog when you enable any accessibility service, warning that the app can "read all screen content" and "perform gestures". Android shows this same text for every accessibility app — screen readers, password managers, automation tools.
+   - What Unplug actually uses it for:
+     - Detecting which app is currently in the foreground.
+     - Detecting when a blocked in-app tab (YouTube Shorts, Instagram Reels, etc.) is opened.
+     - Pressing BACK / closing the app when a limit is hit, and showing the lock screen.
+   - What Unplug does **not** do with it: it does not record your screen, log keystrokes, or send screen content anywhere (there is no server to send it to — see "100% local" below).
+   - Because this permission is so powerful, **never enable the Unplug accessibility service if you did not install the app yourself from the official source.** And if you ever stop trusting the app, turn the service off first (Settings → Accessibility → Downloaded apps → Unplug), then uninstall.
+
+4. **Usage Access permission ("Let app access usage data")**
+   - Required so Unplug can read how long you have used each app today (via Android's built-in UsageStats API).
+   - Without it, time limits cannot be measured.
+   - Granted manually in Android Settings. Unplug cannot grant it silently — only you can.
+
+5. **"Display over other apps" / overlay permission**
+   - Required so the lock screen can appear on top of the app you were just using when time runs out.
+   - Granted manually in Android Settings. Only you can enable it.
+
+6. **OEM-specific warnings (OxygenOS / ColorOS / MIUI / Samsung)**
+   - Some manufacturers add extra steps: auto-start managers, battery-optimization whitelists, or separate "Downloaded apps" accessibility lists.
+   - If enforcement seems to stop working after a reboot or after the phone sleeps, check battery optimization exemptions and the accessibility service toggle — aggressive OEM battery savers are the most common cause.
+   - **OxygenOS / ColorOS path:** Settings → Accessibility → Downloaded apps → Unplug.
+
+### Rules to stay safe
+
+- **Download only from GitHub Releases on this repository.** Check the URL bar.
+- **Review the permissions yourself.** If any permission prompt does not match what is described in this README, stop and ask (open a GitHub issue) before continuing.
+- **This app is fully open source — verify it.** Every line of code that ships in the APK is in this repository. You (or someone you trust) can read the Dart UI code in `lib/` and the native enforcement code in `android/app/src/main/kotlin/`. If the code and the release ever stop matching, treat that as a red flag.
+- **You are always in control.** All sensitive permissions are granted manually by you in Android Settings and can be revoked manually at any time. Unplug cannot re-enable them itself.
+
+> If any warning makes you uncomfortable, **do not install the app.** No screen-time tool is worth installing software you do not trust. Come back later, read the code, or ask questions in the issue tracker first.
+
+---
+
+## 🔒 100% Open Source, 100% Local
+
+- **Fully open source.** The complete source code — Flutter UI, Kotlin accessibility service, everything — is public in this repository under the project license. No hidden modules, no obfuscated binaries. What you see is what runs.
+- **Local to your phone.** No accounts. No sign-up. No cloud sync. No analytics. No tracking SDKs.
+  - App groups, time limits, usage history, and bonus time are stored in **SharedPreferences on your device only**.
+  - The native Kotlin service reads those same on-device preferences directly. **No network calls happen during enforcement.**
+- **The only network requests the app ever makes:**
+  1. An anonymous install counter (`counterapi.dev`) that fires **once** on first launch with no identifying information.
+  2. Rewarded video ads (Google Mobile Ads SDK) when **you choose** to watch an ad to earn bonus time.
+  3. Update checks against the GitHub Releases API so the app can tell you when a new version exists.
+- If you do not believe these claims, the source is right here — search for `http`, `HttpClient`, and `WebView` yourself and see exactly where every request goes.
+
 ---
 
 ## What is Unplug?
@@ -21,8 +92,6 @@
 Unplug helps you reduce mindless scrolling by setting **daily time limits** on app groups and **blocking addictive tabs** like YouTube Shorts, Instagram Reels, and Snapchat Spotlight — without killing the entire app.
 
 When your time runs out, you face a choice: watch a full ad or type a 50-word mindfulness message to earn extra time. No easy skips. No "just 5 more minutes" loopholes.
-
-> **100% local. No accounts. No servers. Your data never leaves your device.**
 
 ---
 
@@ -76,27 +145,30 @@ Both are intentionally inconvenient — that's the point. If you really need mor
 
 ## Permissions Required
 
-| Permission | Why |
-|-----------|-----|
-| **Usage Access** | Read how long you've used each app today |
-| **Accessibility Service** | Detect when time-limited apps open and enforce limits |
+| Permission | Why | How it is granted |
+|-----------|-----|-------------------|
+| **Usage Access** | Read how long you've used each app today | Manually, in Android Settings |
+| **Accessibility Service** | Detect when time-limited apps open and enforce limits (core function — app does nothing without it) | Manually, in Android Settings → Accessibility → Downloaded apps → Unplug |
+| **Display over other apps** | Show the lock screen on top of the timed-out app | Manually, in Android Settings |
 
-Both are granted manually in Android Settings. Unplug cannot modify these — only you can.
+Unplug cannot grant or modify any of these itself — only you can, and only you can revoke them.
 
 **OxygenOS / ColorOS users:**
 Settings → Accessibility → Downloaded apps → Unplug
+
+> ⚠️ When enabling the Accessibility Service, Android will warn that Unplug can "read screen content" and "perform actions". This is the standard system warning shown for every accessibility service. See the "PLEASE READ FIRST" section at the top for what Unplug actually does with this access — and remember the code is open for you to verify.
 
 ---
 
 ## Download
 
-**[Download the latest APK](https://github.com/EGBYtest/Unplug/releases/latest)** from GitHub Releases.
+**[Download v1.0.0 APK](https://github.com/EGBYtest/Unplug/releases/tag/v1.0.0)** from GitHub Releases.
 
 Requirements:
 - Android 11+ (API 30)
 - ~24 MB download
 
-> **Note:** Not available on Google Play. Side-loading required — enable "Install unknown apps" for your browser or file manager.
+> **Note:** Not available on Google Play. Side-loading required — enable "Install unknown apps" for your browser or file manager. Expect a Play Protect warning since this is a new app with no reputation (see warnings section above). Verify the download comes from this repository's Releases page.
 
 ---
 
@@ -170,14 +242,21 @@ Unplug/
 - Dart SDK ≥ 3.0.0
 - Android API 30+
 
+### Verify a release
+1. Check the release tag (`v1.0.0`) and the published `VERSION` file match.
+2. Optionally rebuild the APK from the tagged source yourself (`flutter build apk --release`) and compare behavior/checksum expectations.
+3. Audit network usage: search the codebase for `HttpClient`, `http`, `WebView`, and `counterapi` — every outbound request is in `lib/main.dart` (install counter), `lib/services/update_checker.dart` (update check), and the ads SDK (rewarded ads only).
+
 ---
 
 ## Privacy
 
 - No analytics. No tracking. No accounts.
-- All data (groups, limits, usage history) stored locally in SharedPreferences
-- The install counter (counterapi.dev) fires **once** on first launch with no identifying information
-- Source code is open — verify for yourself
+- All data (groups, limits, usage history) stored locally in SharedPreferences — on your phone, nowhere else.
+- The install counter (counterapi.dev) fires **once** on first launch with no identifying information.
+- Update checks query the public GitHub Releases API.
+- Rewarded ads (Google Mobile Ads SDK) load only when you choose to watch an ad.
+- Source code is fully open — verify every claim yourself.
 
 ---
 
