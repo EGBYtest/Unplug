@@ -15,7 +15,6 @@ void main() {
     // default that changes here silently changes on-device enforcement.
     test('settings lock is on by default', () {
       expect(StorageService().settingsLockEnabled, isTrue);
-      expect(StorageService().settingsLockAutoEnabled, isFalse);
     });
 
     test('reset hour defaults to 2am', () {

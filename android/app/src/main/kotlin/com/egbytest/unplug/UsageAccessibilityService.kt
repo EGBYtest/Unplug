@@ -165,6 +165,37 @@ class UsageAccessibilityService : AccessibilityService() {
             val totalLimit = limit + (bonus / 60)
             if (totalLimit == 0) { blockApp(pkg, groupName); return }
 
+            val usedMinutes = groupUsageMinutes(groupName, prefs)
+            if (usedMinutes >= totalLimit) {
+                Log.i(TAG, "block $pkg ($groupName): ${usedMinutes}m >= ${totalLimit}m")
+                blockApp(pkg, groupName)
+            } else {
+                Log.i(TAG, "ok $pkg ($groupName): ${usedMinutes}m / ${totalLimit}m (bonus=${bonus}s, resetHour=${prefs.getFlutterInt("flutter.reset_hour", 2)})")
+            }
+            return
+        }
+    }
+
+    // ─── Usage accounting ────────────────────────────────────────────────
+    //
+    // One definition of "how much has this group used today", shared by the
+    // per-event check in checkAndBlock and the sweep in enforceVisiblePackages.
+    //
+    // These used to disagree. checkAndBlock summed only the foreground
+    // package while comparing against the GROUP limit, so a "Social Media =
+    // 30 minutes across 5 apps" budget was enforced on that path as 30
+    // minutes in any single app. enforceVisiblePackages summed the whole
+    // group and got it right, and ran immediately afterwards on the same
+    // event, so the stricter reading won in practice — but one path would log
+    // "ok" right before the other blocked. Two answers to one question is a
+    // trap for whoever edits this next.
+
+    /**
+     * Foreground minutes used by every package in [groupName] since the last
+     * reset hour. Returns 0 when usage access is unavailable.
+     */
+    private fun groupUsageMinutes(groupName: String, prefs: SharedPreferences): Int {
+        return try {
             val usm = getSystemService(USAGE_STATS_SERVICE) as UsageStatsManager
             val resetHour = prefs.getFlutterInt("flutter.reset_hour", 2)
             val cal = Calendar.getInstance().apply {
@@ -175,21 +206,36 @@ class UsageAccessibilityService : AccessibilityService() {
             var stats = usm.queryUsageStats(UsageStatsManager.INTERVAL_BEST, cal.timeInMillis, System.currentTimeMillis())
             if (stats.isNullOrEmpty()) stats = usm.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, cal.timeInMillis, System.currentTimeMillis())
 
-            var totalMs = 0L
+            val packages = packageNamesForGroup(groupName, prefs)
+            var ms = 0L
             if (stats != null) {
                 for (s in stats) {
-                    if (s.packageName in listOf(pkg)) {
-                        totalMs += s.totalTimeInForeground
-                    }
+                    if (s.packageName in packages) ms += s.totalTimeInForeground
                 }
             }
-            if (totalMs / 60000 >= totalLimit) {
-                Log.i(TAG, "block $pkg ($groupName): ${totalMs/60000}m >= ${totalLimit}m")
-                blockApp(pkg, groupName)
-            } else {
-                Log.i(TAG, "ok $pkg ($groupName): ${totalMs/60000}m / ${totalLimit}m (bonus=${bonus}s, resetHour=$resetHour)")
+            (ms / 60000).toInt()
+        } catch (_: Exception) {
+            0
+        }
+    }
+
+    /** The package list configured for [groupName], or empty if no such group. */
+    private fun packageNamesForGroup(groupName: String, prefs: SharedPreferences): List<String> {
+        return try {
+            val json = prefs.getString("flutter.app_groups", "[]") ?: "[]"
+            if (json == "[]") return emptyList()
+            val groups = JSONArray(json)
+            val out = mutableListOf<String>()
+            for (i in 0 until groups.length()) {
+                val g = groups.getJSONObject(i)
+                if (g.getString("name") == groupName) {
+                    val a = g.getJSONArray("packageNames")
+                    for (j in 0 until a.length()) out.add(a.getString(j).trim())
+                }
             }
-            return
+            out
+        } catch (_: Exception) {
+            emptyList()
         }
     }
 
@@ -828,39 +874,12 @@ class UsageAccessibilityService : AccessibilityService() {
                 val pair = pkgToGroup[p] ?: continue
                 val (name, limit) = pair
                 val bonus = prefs.getFlutterInt("flutter.bonus_seconds_$name", 0)
-                if (limit + (bonus / 60) == 0 || getUsageMinutesForGroup(name, p) >= (limit + (bonus / 60))) {
+                val totalLimit = limit + (bonus / 60)
+                if (totalLimit == 0 || groupUsageMinutes(name, prefs) >= totalLimit) {
                     blockApp(p, name); return
                 }
             }
         } catch (_: Exception) {}
-    }
-
-    private fun getUsageMinutesForGroup(group: String, sample: String): Int {
-        return try {
-            val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
-            val usm = getSystemService(USAGE_STATS_SERVICE) as UsageStatsManager
-            val resetHour = prefs.getFlutterInt("flutter.reset_hour", 2)
-            val cal = Calendar.getInstance().apply {
-                if (get(Calendar.HOUR_OF_DAY) < resetHour) add(Calendar.DAY_OF_MONTH, -1)
-                set(Calendar.HOUR_OF_DAY, resetHour); set(Calendar.MINUTE, 0)
-                set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
-            }
-            var stats = usm.queryUsageStats(UsageStatsManager.INTERVAL_BEST, cal.timeInMillis, System.currentTimeMillis())
-            if (stats.isNullOrEmpty()) stats = usm.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, cal.timeInMillis, System.currentTimeMillis())
-            val json = prefs.getString("flutter.app_groups", "[]") ?: "[]"
-            val groups = JSONArray(json)
-            val pkgs = mutableListOf<String>()
-            for (i in 0 until groups.length()) {
-                val g = groups.getJSONObject(i)
-                if (g.getString("name") == group) {
-                    val a = g.getJSONArray("packageNames")
-                    for (j in 0 until a.length()) pkgs.add(a.getString(j).trim())
-                }
-            }
-            var ms = 0L
-            for (s in stats) { if (s.packageName in pkgs) ms += s.totalTimeInForeground }
-            (ms / 60000).toInt()
-        } catch (_: Exception) { 0 }
     }
 
     override fun onInterrupt() {}

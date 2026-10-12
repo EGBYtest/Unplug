@@ -76,12 +76,6 @@ class StorageService {
     await _prefs?.setBool('settings_lock_enabled', value);
   }
 
-  bool get settingsLockAutoEnabled => _prefs?.getBool('settings_lock_auto_enabled') ?? false;
-
-  Future<void> setSettingsLockAutoEnabled() async {
-    await _prefs?.setBool('settings_lock_auto_enabled', true);
-  }
-
   // ─── Global In-App Tab Blockers ────────────────────────────────────────────
 
   List<BannedFeature> loadGlobalTabBlockers() {
