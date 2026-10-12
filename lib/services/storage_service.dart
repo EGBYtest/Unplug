@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/app_group.dart';
@@ -37,7 +38,7 @@ class StorageService {
 
   Future<void> init() async {
     _prefs = await SharedPreferences.getInstance();
-    await _resetDailyBonusesIfNeeded();
+    await _purgeStaleBonuses();
   }
 
   // ─── Onboarding ────────────────────────────────────────────────────────────
@@ -262,25 +263,41 @@ class StorageService {
   // ─── Bonus seconds ────────────────────────────────────────────────────────
   // Bonus is stored in SECONDS for precision; limits are in minutes.
 
-  int getBonusSeconds(String groupName) =>
-      _prefs?.getInt('bonus_seconds_$groupName') ?? 0;
+  int getBonusSeconds(String groupName) {
+    // The reset has to be evaluated synchronously here. The native
+    // AccessibilityService reads bonus_seconds_* straight out of
+    // SharedPreferences and never runs Dart, so a reset performed only at
+    // app launch would leave yesterday's bonus inflating today's limit on
+    // every day the user does not open Unplug. Kicking off a purge and
+    // reading the key anyway would hand callers the stale value.
+    final today = dayKey(DateTime.now());
+    if ((_prefs?.getString(_lastBonusResetKey) ?? '') != today) {
+      unawaited(_purgeStaleBonuses());
+      return 0;
+    }
+    return _prefs?.getInt('bonus_seconds_$groupName') ?? 0;
+  }
 
   Future<void> addBonusSeconds(String groupName, int seconds) async {
-    final current = getBonusSeconds(groupName);
+    await _purgeStaleBonuses();
+    final current = _prefs?.getInt('bonus_seconds_$groupName') ?? 0;
     await _prefs?.setInt('bonus_seconds_$groupName', current + seconds);
   }
 
-  Future<void> _resetDailyBonusesIfNeeded() async {
-    final key = dayKey(DateTime.now());
-    final lastReset = _prefs?.getString('last_bonus_reset') ?? '';
-    if (lastReset == key) return;
+  /// Drops bonus seconds earned on an earlier day. No-op once the stored day
+  /// marker matches today, so it is cheap to call on every read and write.
+  Future<void> _purgeStaleBonuses() async {
+    final today = dayKey(DateTime.now());
+    if ((_prefs?.getString(_lastBonusResetKey) ?? '') == today) return;
 
     final keys = _prefs?.getKeys() ?? {};
     for (final k in keys) {
-      if (k.startsWith('bonus_')) await _prefs?.remove(k);
+      if (k.startsWith('bonus_seconds_')) await _prefs?.remove(k);
     }
-    await _prefs?.setString('last_bonus_reset', key);
+    await _prefs?.setString(_lastBonusResetKey, today);
   }
+
+  static const String _lastBonusResetKey = 'last_bonus_reset';
 
   // ─── Daily screen time history ─────────────────────────────────────────────
   // Stores daily totals (minutes) keyed by date string "YYYY-MM-DD".
@@ -309,16 +326,19 @@ class StorageService {
 
     final today = dayKey(DateTime.now());
     final cutoff = _dayStart(DateTime.now()).subtract(Duration(days: days));
-    final cutoffStr = cutoff.toIso8601String().substring(0, 10);
 
     int total = 0;
     int count = 0;
     for (final entry in history.entries) {
       if (entry.key == today) continue;
-      if (entry.key.compareTo(cutoffStr) >= 0) {
-        total += entry.value;
-        count++;
-      }
+      // Compare as dates, not as strings. "2026-09-12" sorts after
+      // "2026-10-05" lexicographically because '9' > '1' at the month
+      // position, which pulled every entry from a previous month into the
+      // average and skewed it high.
+      final date = DateTime.tryParse(entry.key);
+      if (date == null || date.isBefore(cutoff)) continue;
+      total += entry.value;
+      count++;
     }
     if (count == 0) return null;
     return total / count;
