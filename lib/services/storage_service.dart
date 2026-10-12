@@ -48,12 +48,18 @@ class StorageService {
     await _prefs?.setBool('onboarding_complete', true);
   }
 
-  // ─── Ad reward seconds ────────────────────────────────────────────────────
-  // Stores how many SECONDS of bonus time each ad earns the user.
+  // ─── Bonus reward seconds ───────────────────────────────────────────────
+  // How many SECONDS of bonus time a completed reward action grants.
+  //
+  // The on-disk key is still "ad_reward_seconds" from when this was called
+  // an ad. It has never been an ad and no ad SDK exists, but renaming the
+  // key would silently reset every existing user's configured reward to the
+  // 60s default. Dart is the only reader, so there is no cross-language
+  // contract here to keep in sync — just the stored value.
 
-  int get adRewardSeconds => _prefs?.getInt('ad_reward_seconds') ?? 60;
+  int get bonusRewardSeconds => _prefs?.getInt('ad_reward_seconds') ?? 60;
 
-  Future<void> saveAdRewardSeconds(int seconds) async {
+  Future<void> saveBonusRewardSeconds(int seconds) async {
     await _prefs?.setInt('ad_reward_seconds', seconds);
   }
 

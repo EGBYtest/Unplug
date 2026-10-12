@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart' show Colors;
-import 'services/ad_reward_system.dart';
+import 'services/reward_gate.dart';
 import 'services/message_verification.dart';
 import 'services/storage_service.dart';
 import 'utils/no_paste_formatter.dart';
@@ -32,7 +32,7 @@ class _LockScreenPopupState extends State<LockScreenPopup> {
   int _wordCount = 0;
   static const int _targetWordCount = 50;
   final MessageVerification _verifier = MessageVerification();
-  final AdRewardSystem _ads = AdRewardSystem();
+  final RewardGate _rewardGate = RewardGate();
   final StorageService _storage = StorageService();
   late final String _targetMessage;
 
@@ -76,8 +76,8 @@ class _LockScreenPopupState extends State<LockScreenPopup> {
 
   String get _effectiveGroupName => widget.groupName ?? widget.appName;
 
-  Future<void> _grantExtraMinute() async {
-    await _storage.addBonusSeconds(_effectiveGroupName, _storage.adRewardSeconds);
+  Future<void> _grantBonusTime() async {
+    await _storage.addBonusSeconds(_effectiveGroupName, _storage.bonusRewardSeconds);
     if (mounted) Navigator.of(context).pop();
   }
 
@@ -88,11 +88,11 @@ class _LockScreenPopupState extends State<LockScreenPopup> {
     return s == 0 ? '${m}m' : '${m}m ${s}s';
   }
 
-  void _watchAd() {
-    _ads.showRewardedAd(
+  void _waitForBonus() {
+    _rewardGate.showWait(
       context,
       () async {
-        if (mounted) await _grantExtraMinute();
+        if (mounted) await _grantBonusTime();
       },
       () {
         if (mounted) setState(() => _showTypeChallenge = true);
@@ -102,7 +102,7 @@ class _LockScreenPopupState extends State<LockScreenPopup> {
 
   void _submitMessage() {
     if (_verifier.verifyMessage(_textController.text)) {
-      _grantExtraMinute();
+      _grantBonusTime();
     } else {
       showCupertinoDialog(
         context: context,
@@ -177,7 +177,7 @@ class _LockScreenPopupState extends State<LockScreenPopup> {
                     Column(
                       children: <Widget>[
                         Text(
-                          '+${_fmtSeconds(_storage.adRewardSeconds)} per action',
+                          '+${_fmtSeconds(_storage.bonusRewardSeconds)} per action',
                           style: const TextStyle(color: Colors.white38, fontSize: 13),
                         ),
                         const SizedBox(height: 16),
@@ -187,11 +187,11 @@ class _LockScreenPopupState extends State<LockScreenPopup> {
                             color: const Color(0xFF0A84FF),
                             borderRadius: BorderRadius.circular(12),
                             padding: const EdgeInsets.symmetric(vertical: 14),
-                            onPressed: _watchAd,
+                            onPressed: _waitForBonus,
                             child: const Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: <Widget>[
-                                Icon(CupertinoIcons.play_circle_fill, color: Colors.white, size: 18),
+                                Icon(CupertinoIcons.clock_fill, color: Colors.white, size: 18),
                                 SizedBox(width: 8),
                                 Text('Wait 30s  (+time)', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                               ],

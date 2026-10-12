@@ -3,57 +3,66 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-class AdRewardSystem {
-  static final AdRewardSystem _instance = AdRewardSystem._internal();
-  factory AdRewardSystem() => _instance;
-  AdRewardSystem._internal();
+/// Grants bonus time in exchange for a 30-second wait.
+///
+/// This is a local timer dialog, not an advertisement. It contains no ad
+/// SDK, contacts no ad network, and makes no network requests at all. The
+/// dialog shows a link to the project's own store; tapping it hands off to
+/// the browser via url_launcher, which is the only external interaction.
+///
+/// The wait exists to cost something. The timer resets to 30 whenever the
+/// app is backgrounded or the window shrinks, so it cannot be run away in
+/// split-screen or a floating window while doing something else.
+class RewardGate {
+  static final RewardGate _instance = RewardGate._internal();
+  factory RewardGate() => _instance;
+  RewardGate._internal();
 
-  Future<void> initializeAds() async {}
-
-  void showRewardedAd(
+  /// Presents the wait dialog. [onRewardGranted] fires once the wait
+  /// completes; [onCancelled] fires if the user backs out.
+  void showWait(
     BuildContext context,
     VoidCallback onRewardGranted,
-    VoidCallback onAdFailed, {
+    VoidCallback onCancelled, {
     int accumulatedSeconds = 0,
   }) {
-    _presentWaitScreen(context, onRewardGranted, onAdFailed, accumulatedSeconds);
+    _presentWaitScreen(context, onRewardGranted, onCancelled, accumulatedSeconds);
   }
 
   void _presentWaitScreen(
     BuildContext context,
     VoidCallback onRewardGranted,
-    VoidCallback onAdFailed,
+    VoidCallback onCancelled,
     int accumulatedSeconds,
   ) {
     showCupertinoDialog(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => _PromoWaitDialog(
+      builder: (ctx) => _WaitDialog(
         accumulatedSeconds: accumulatedSeconds,
         onComplete: onRewardGranted,
-        onCancel: onAdFailed,
+        onCancel: onCancelled,
       ),
     );
   }
 }
 
-class _PromoWaitDialog extends StatefulWidget {
+class _WaitDialog extends StatefulWidget {
   final int accumulatedSeconds;
   final VoidCallback onComplete;
   final VoidCallback onCancel;
 
-  const _PromoWaitDialog({
+  const _WaitDialog({
     required this.accumulatedSeconds,
     required this.onComplete,
     required this.onCancel,
   });
 
   @override
-  State<_PromoWaitDialog> createState() => _PromoWaitDialogState();
+  State<_WaitDialog> createState() => _WaitDialogState();
 }
 
-class _PromoWaitDialogState extends State<_PromoWaitDialog>
-    with WidgetsBindingObserver {
+class _WaitDialogState extends State<_WaitDialog> with WidgetsBindingObserver {
   int _remaining = 30;
   late Timer _timer;
   bool _cancelled = false;

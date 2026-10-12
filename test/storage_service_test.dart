@@ -22,8 +22,8 @@ void main() {
       expect(StorageService().resetHour, 2);
     });
 
-    test('ad reward defaults to 60 seconds', () {
-      expect(StorageService().adRewardSeconds, 60);
+    test('bonus reward defaults to 60 seconds', () {
+      expect(StorageService().bonusRewardSeconds, 60);
     });
 
     test('onboarding starts incomplete', () {

@@ -1,7 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'services/ad_reward_system.dart';
+import 'services/reward_gate.dart';
 import 'services/message_verification.dart';
 import 'services/storage_service.dart';
 import 'services/usage_tracker.dart';
@@ -23,7 +23,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final UsageTracker _tracker = UsageTracker();
   late List<AppGroup> _groups;
   late List<BannedFeature> _globalTabBlockers;
-  late int _adRewardSeconds;
+  late int _bonusRewardSeconds;
   late int _resetHour;
   late bool _settingsLock;
 
@@ -32,7 +32,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     super.initState();
     _groups = List.from(_storage.loadGroups());
     _globalTabBlockers = List.from(_storage.loadGlobalTabBlockers());
-    _adRewardSeconds = _storage.adRewardSeconds;
+    _bonusRewardSeconds = _storage.bonusRewardSeconds;
     _resetHour = _storage.resetHour;
     _settingsLock = _storage.settingsLockEnabled;
   }
@@ -54,12 +54,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
           CupertinoActionSheetAction(
             onPressed: () {
               Navigator.pop(context);
-              AdRewardSystem().showRewardedAd(context, action, () {});
+              RewardGate().showWait(context, action, () {});
             },
             child: const Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(CupertinoIcons.play_circle_fill, color: Color(0xFF0A84FF), size: 18),
+                Icon(CupertinoIcons.clock_fill, color: Color(0xFF0A84FF), size: 18),
                 SizedBox(width: 8),
                 Text('Wait 30s', style: TextStyle(fontWeight: FontWeight.bold)),
               ],
@@ -232,8 +232,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   // ─── Edit Ad Ratio ─────────────────────────────────────────────────────────
 
   void _editAdRatio() {
-    int tempSeconds = _adRewardSeconds % 60;
-    int tempMinutes = _adRewardSeconds ~/ 60;
+    int tempSeconds = _bonusRewardSeconds % 60;
+    int tempMinutes = _bonusRewardSeconds ~/ 60;
 
     showCupertinoModalPopup(
       context: context,
@@ -255,13 +255,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
                     onPressed: () => Navigator.pop(context),
                   ),
-                  const Text('Reward per Ad', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                  const Text('Reward per Wait', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
                   CupertinoButton(
                     padding: EdgeInsets.zero,
                     child: const Text('Save', style: TextStyle(color: Color(0xFF0A84FF), fontWeight: FontWeight.bold)),
                     onPressed: () async {
-                      setState(() => _adRewardSeconds = tempMinutes * 60 + tempSeconds);
-                      await _storage.saveAdRewardSeconds(_adRewardSeconds);
+                      setState(() => _bonusRewardSeconds = tempMinutes * 60 + tempSeconds);
+                      await _storage.saveBonusRewardSeconds(_bonusRewardSeconds);
                       if (mounted) Navigator.pop(context);
                     },
                   ),
@@ -274,7 +274,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             Expanded(
               child: CupertinoTimerPicker(
                 mode: CupertinoTimerPickerMode.ms,
-                initialTimerDuration: Duration(seconds: _adRewardSeconds),
+                initialTimerDuration: Duration(seconds: _bonusRewardSeconds),
                 onTimerDurationChanged: (d) {
                   tempMinutes = d.inMinutes;
                   tempSeconds = d.inSeconds % 60;
@@ -313,7 +313,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() => _saving = true);
     await _storage.saveGroups(_groups);
     await _storage.saveGlobalTabBlockers(_globalTabBlockers);
-    await _storage.saveAdRewardSeconds(_adRewardSeconds);
+    await _storage.saveBonusRewardSeconds(_bonusRewardSeconds);
     await _storage.saveResetHour(_resetHour);
     _tracker.appGroups = List.from(_groups);
 
@@ -433,13 +433,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 CupertinoListSection.insetGrouped(
                   backgroundColor: Colors.black,
                   decoration: BoxDecoration(color: const Color(0xFF1C1C1E), borderRadius: BorderRadius.circular(12)),
-                  header: const Text('AD-TO-TIME RATIO', style: TextStyle(color: Colors.white54)),
+                  header: const Text('REWARD-TO-TIME RATIO', style: TextStyle(color: Colors.white54)),
                   children: [
                     CupertinoListTile(
                       backgroundColor: const Color(0xFF1C1C1E),
                       leading: const Icon(CupertinoIcons.play_rectangle_fill, color: Color(0xFFFF9F0A), size: 22),
-                      title: const Text('Reward per Ad', style: TextStyle(color: Colors.white)),
-                      additionalInfo: Text(_formatSeconds(_adRewardSeconds), style: const TextStyle(color: Colors.white70)),
+                      title: const Text('Reward per Wait', style: TextStyle(color: Colors.white)),
+                      additionalInfo: Text(_formatSeconds(_bonusRewardSeconds), style: const TextStyle(color: Colors.white70)),
                       trailing: const CupertinoListTileChevron(),
                       onTap: () => _confirmChange(_editAdRatio),
                     ),
