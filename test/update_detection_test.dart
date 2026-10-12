@@ -30,24 +30,26 @@ void main() {
   final token = _token();
 
   group('an older build sees the latest release', () {
-    test('a build one release behind reports the update', () async {
-      // One below whatever is actually published, so this keeps working as
-      // releases ship rather than pinning a version that goes stale.
-      final behind = '${AppVersion.name.split('.').first}.'
-          '${AppVersion.name.split('.')[1]}.'
-          '${int.parse(AppVersion.name.split('.')[2]) - 1}';
+    test('an older build is told about the latest release', () async {
+      // 0.0.1 is older than anything this project will ever ship, so this
+      // holds whatever the tree's own version happens to be. Deriving it from
+      // AppVersion.name instead made the test fail on the commit that bumps
+      // the version, before that version is even published.
+      final info = await UpdateChecker.check(
+        currentVersion: '0.0.1',
+        authToken: token,
+      );
 
-      final info = await UpdateChecker.check(currentVersion: behind, authToken: token);
-
-      debugPrint('pretending to be $behind; '
+      debugPrint('pretending to be 0.0.1; '
           'server says ${info.latestVersion}; available=${info.isAvailable}');
 
       expect(
         info.isAvailable,
         isTrue,
-        reason: 'a build reporting itself as $behind must be told about '
-            '${info.latestVersion.isEmpty ? 'nothing' : info.latestVersion}',
+        reason: 'a build reporting itself as 0.0.1 must be told about the '
+            'published release, otherwise the banner can never appear',
       );
+      expect(info.latestVersion, isNotEmpty);
       expect(info.downloadUrl, contains(info.latestVersion));
     }, timeout: const Timeout(Duration(seconds: 60)));
 
