@@ -36,10 +36,6 @@ class MainActivity : FlutterActivity() {
         channel?.setMethodCallHandler { call, result ->
             when (call.method) {
                 "lockScreenDismissed" -> { lockScreenActive = false; result.success(true) }
-                "forceCloseApp" -> {
-                    val pkg = call.argument<String>("packageName") ?: ""
-                    result.success(AppClosureHandler(applicationContext).forceCloseApp(pkg))
-                }
                 "openAccessibilitySettings" -> {
                     startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply { flags = Intent.FLAG_ACTIVITY_NEW_TASK }); result.success(true)
                 }

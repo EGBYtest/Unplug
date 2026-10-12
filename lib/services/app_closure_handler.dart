@@ -9,18 +9,6 @@ class AppClosureHandler {
 
   static const MethodChannel _channel = MethodChannel('app_closure');
 
-  /// Calls native code to redirect user to home screen (blocking the limited app)
-  Future<bool> forceCloseApp(String packageName) async {
-    try {
-      final bool success =
-          await _channel.invokeMethod('forceCloseApp', {'packageName': packageName});
-      return success;
-    } on PlatformException catch (e) {
-      debugPrint("Failed to force close app: '${e.message}'.");
-      return false;
-    }
-  }
-
   /// Opens the Android Accessibility Settings page
   Future<void> openAccessibilitySettings() async {
     try {

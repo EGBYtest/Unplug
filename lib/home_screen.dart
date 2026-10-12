@@ -25,6 +25,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   int _totalMinutesToday = 0;
   bool _loading = true;
   Timer? _refreshTimer;
+  Timer? _updateCheckTimer;
   late List<AppGroup> _groups;
   UpdateInfo? _updateInfo;
   bool _updateDismissed = false;
@@ -34,13 +35,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _groups = _storage.loadGroups();
-    _tracker.appGroups = _groups;
-    _tracker.startTracking();
     _loadUsage();
     _refreshTimer = Timer.periodic(const Duration(seconds: 60), (_) => _loadUsage());
     WidgetsBinding.instance.addPostFrameCallback((_) => _checkPermissionsOnStart());
     _checkUpdate();
-    Timer.periodic(const Duration(minutes: 10), (_) {
+    _updateCheckTimer = Timer.periodic(const Duration(minutes: 10), (_) {
       UpdateChecker.cachedUpdate = null;
       _checkUpdate();
     });
@@ -105,6 +104,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _refreshTimer?.cancel();
+    _updateCheckTimer?.cancel();
     super.dispose();
   }
 

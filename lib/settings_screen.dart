@@ -4,7 +4,6 @@ import 'package:url_launcher/url_launcher.dart';
 import 'services/reward_gate.dart';
 import 'services/message_verification.dart';
 import 'services/storage_service.dart';
-import 'services/usage_tracker.dart';
 import 'models/app_group.dart';
 import 'utils/no_paste_formatter.dart';
 import 'screens/app_picker_screen.dart';
@@ -20,7 +19,6 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   bool _saving = false;
   final StorageService _storage = StorageService();
-  final UsageTracker _tracker = UsageTracker();
   late List<AppGroup> _groups;
   late List<BannedFeature> _globalTabBlockers;
   late int _bonusRewardSeconds;
@@ -203,7 +201,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         timeLimitMinutes: totalMinutes,
                       ));
                       await _storage.saveGroups(_groups);
-                      _tracker.appGroups = List.from(_groups);
                       if (mounted) Navigator.pop(context);
                     },
                   ),
@@ -297,7 +294,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (selected != null) {
       setState(() => _groups[index] = AppGroup(name: group.name, packageNames: selected, timeLimitMinutes: group.timeLimitMinutes));
       await _storage.saveGroups(_groups);
-      _tracker.appGroups = List.from(_groups);
     }
   }
 
@@ -315,7 +311,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await _storage.saveGlobalTabBlockers(_globalTabBlockers);
     await _storage.saveBonusRewardSeconds(_bonusRewardSeconds);
     await _storage.saveResetHour(_resetHour);
-    _tracker.appGroups = List.from(_groups);
 
     if (mounted) {
       setState(() => _saving = false);
