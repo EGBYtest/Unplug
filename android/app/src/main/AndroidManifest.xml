@@ -1,6 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Update checks (GitHub Releases API + raw VERSION fallback) are the only
+         outbound requests this app makes. Without this permission the release
+         build cannot make them at all: the debug and profile manifests declare
+         INTERNET, but main does not, and debug/profile permissions do not carry
+         into a release build. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+
     <!-- Required to read app usage statistics -->
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"/>
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"

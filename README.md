@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <strong>Version 1.1.0</strong>
+  <strong>Version 1.1.7</strong>
 </p>
 
 ---
@@ -79,10 +79,13 @@ When you install and set up Unplug, you will very likely see one or more of the 
 - **Local to your phone.** No accounts. No sign-up. No cloud sync. No analytics. No tracking SDKs.
   - App groups, time limits, usage history, and bonus time are stored in **SharedPreferences on your device only**.
   - The native Kotlin service reads those same on-device preferences directly. **No network calls happen during enforcement.**
-- **The only network request the app ever makes:**
+- **The only network requests the app ever makes:**
   1. Update checks against the public GitHub Releases API, so the app can tell you when a new version exists.
+  2. If that API is unusable (rate-limited, down, or unparseable), a fallback read of the repository's raw `VERSION` file.
 
   Checks are throttled to at most one request every 30 minutes, because GitHub allows only 60 unauthenticated requests per hour per IP — a limit shared by everyone behind the same mobile carrier. Without the throttle, glancing at your phone often enough could spend it, and a rate-limited API falls back to a CDN-cached copy of the version file that can lag a few minutes behind a release.
+
+  A failed check is never cached as "no update" — otherwise one bad moment would hide the banner for the rest of the window with no error anywhere. The app distinguishes "the source answered and there is nothing newer" from "the source did not answer", and only the former suppresses the banner.
 
   Earning bonus time involves **no network access whatsoever** — see [Earn More Time](#earn-more-time--mindfully) below. The 30-second wait is a local timer dialog. The sponsor link it contains opens your browser only if you tap it, and it goes to our own site, not to any ad network or third party.
 
@@ -159,11 +162,12 @@ Bonus expires on its own at your reset hour, whether or not you open the app —
 
 | Permission | Why | How it is granted |
 |-----------|-----|-------------------|
+| **Internet** | Check GitHub Releases for a newer version. This is the only outbound request the app makes. | Automatic, at install — no prompt |
 | **Usage Access** | Read how long you've used each app today | Manually, in Android Settings |
 | **Accessibility Service** | Detect when time-limited apps open and enforce limits (core function — app does nothing without it) | Manually, in Android Settings → Accessibility → Downloaded apps → Unplug |
 | **Display over other apps** | Show the lock screen on top of the timed-out app | Manually, in Android Settings |
 
-Unplug cannot grant or modify any of these itself — only you can, and only you can revoke them.
+Unplug cannot grant or modify any of these itself — only you can, and only you can revoke them. The Internet permission is the one exception: it is a normal install-time permission, shown as no prompt, and revoking it is just an app permission toggle in Android Settings.
 
 **OxygenOS / ColorOS users:**
 Settings → Accessibility → Downloaded apps → Unplug
@@ -174,13 +178,25 @@ Settings → Accessibility → Downloaded apps → Unplug
 
 ## Download
 
-**[Download v1.0.0 APK](https://github.com/EGBYtest/Unplug/releases/tag/v1.0.0)** from GitHub Releases.
+**[Download the newest APK (v1.1.7)](https://github.com/EGBYtest/Unplug/releases/latest)** from GitHub Releases.
 
 Requirements:
-- Android 11+ (API 30)
-- ~24 MB download
+- Android 7.0+ (API 24) — raised from API 22 in v1.1.0 by the Flutter toolchain bump
+- ~48 MB download (`app-release.apk`, universal — arm64-v8a, armeabi-v7a, x86_64)
 
 > **Note:** Not available on Google Play. Side-loading required — enable "Install unknown apps" for your browser or file manager. Expect a Play Protect warning since this is a new app with no reputation (see warnings section above). Verify the download comes from this repository's Releases page.
+
+---
+
+## Updating From Inside the App
+
+Unplug checks GitHub for a newer release and shows a blue **"Update vX.Y.Z available — Tap to download"** banner above the ring chart on the dashboard.
+
+- The banner appears **only when a newer version actually exists**. There is no permanent download button sitting on the dashboard — if you are up to date, nothing is shown.
+- Tapping it opens the release page for that version in your browser, where you download the APK. Unplug does not download or install anything itself — it cannot, silently.
+- Dismissing the banner (`✕`) hides it **for that version only**. When a later release comes out, the banner reappears. It is not a permanent "don't show me updates" switch.
+- The dashboard polls every 10 minutes, but the checker itself allows at most one real network lookup every 30 minutes, and a cold start always checks immediately (the cache lives in the app process).
+- If a release is newer but the banner does not appear, that is a real failure worth reporting with the version from Settings → About and `adb logcat -s Unplug: UpdateChecker`.
 
 ---
 
@@ -225,35 +241,40 @@ flutter build apk --release
 Unplug/
 ├── lib/
 │   ├── main.dart                       # Entry point, CupertinoApp, method channel
-│   ├── home_screen.dart                # Dashboard with ring chart + stats
+│   ├── home_screen.dart                # Dashboard: ring chart, stats, update banner
 │   ├── onboarding_screen.dart          # Permission setup flow
 │   ├── settings_screen.dart            # Locked settings (wait/type to unlock)
 │   ├── lock_screen_popup.dart          # Non-dismissible lock dialog + bypass
+│   ├── generated/
+│   │   └── app_version.dart            # GENERATED from pubspec.yaml — do not edit
 │   ├── screens/
 │   │   └── app_picker_screen.dart      # Searchable installed apps list
 │   ├── models/
 │   │   └── app_group.dart              # AppGroup + BannedFeature models
 │   ├── services/
-│   │   ├── storage_service.dart        # SharedPreferences persistence
+│   │   ├── storage_service.dart        # SharedPreferences persistence, bonus/limit maths
 │   │   ├── usage_tracker.dart          # Usage stats queries (dashboard display)
+│   │   ├── update_checker.dart         # GitHub Releases check, throttle, cache, fallback
+│   │   ├── app_closure_handler.dart    # Permission grants + native lock-screen dialog
 │   │   ├── reward_gate.dart            # 30-second wait timer that grants bonus time
 │   │   └── message_verification.dart   # Typing challenge logic
 │   └── utils/
 │       └── no_paste_formatter.dart     # Clipboard paste blocker
+├── tool/
+│   └── gen_version.sh                  # Regenerates lib/generated/app_version.dart
 └── android/
-    └── android/
     └── app/src/main/kotlin/com/egbytest/unplug/
         ├── MainActivity.kt              # FlutterActivity + MethodChannel
         └── UsageAccessibilityService.kt # Foreground watch + enforcement + tab blocking
 ```
 
 ### Requirements
-- Flutter SDK ≥ 3.0.0
+- Flutter SDK ≥ 3.0.0 (built and released against 3.47.7)
 - Dart SDK ≥ 3.0.0
-- Android API 30+
+- Android minSdk 24 / targetSdk 36
 
 ### Verify a release
-1. Check the release tag (`v1.1.0`) and the published `VERSION` file match.
+1. Check the release tag (`v1.1.7`) and the published `VERSION` file match.
 2. Optionally rebuild the APK from the tagged source yourself (`flutter build apk --release`) and compare behavior/checksum expectations.
 3. Audit network usage: search the codebase for `HttpClient`, `http`, `WebView`, and `Socket` — every outbound request is in `lib/services/update_checker.dart`. There is no ad SDK and no analytics SDK to find; if you find one, that is a red flag.
 
