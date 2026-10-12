@@ -79,9 +79,10 @@ When you install and set up Unplug, you will very likely see one or more of the 
 - **Local to your phone.** No accounts. No sign-up. No cloud sync. No analytics. No tracking SDKs.
   - App groups, time limits, usage history, and bonus time are stored in **SharedPreferences on your device only**.
   - The native Kotlin service reads those same on-device preferences directly. **No network calls happen during enforcement.**
-- **The only network requests the app ever makes:**
-  1. Rewarded video ads (Google Mobile Ads SDK) when **you choose** to watch an ad to earn bonus time.
-  2. Update checks against the public GitHub Releases API, so the app can tell you when a new version exists.
+- **The only network request the app ever makes:**
+  1. Update checks against the public GitHub Releases API, so the app can tell you when a new version exists.
+
+  Earning bonus time involves **no network access whatsoever** — see [Earn More Time](#earn-more-time--mindfully) below. The 30-second wait is a local timer dialog. The sponsor link it contains opens your browser only if you tap it, and it goes to our own site, not to any ad network or third party.
 
   Earlier versions also pinged an anonymous install counter (`counterapi.dev`). It was removed in v1.1.2 — the provider retired its v1 API and every request returned `410 Gone`, so it was never actually counting anything.
 - If you do not believe these claims, the source is right here — search for `http`, `HttpClient`, and `WebView` yourself and see exactly where every request goes.
@@ -92,7 +93,7 @@ When you install and set up Unplug, you will very likely see one or more of the 
 
 Unplug helps you reduce mindless scrolling by setting **daily time limits** on app groups and **blocking addictive tabs** like YouTube Shorts, Instagram Reels, and Snapchat Spotlight — without killing the entire app.
 
-When your time runs out, you face a choice: watch a full ad or type a 50-word mindfulness message to earn extra time. No easy skips. No "just 5 more minutes" loopholes.
+When your time runs out, you face a choice: sit through a 30-second wait, or type a 50-word mindfulness message. No easy skips. No "just 5 more minutes" loopholes.
 
 ---
 
@@ -118,13 +119,15 @@ Smart detection exits only the blocked tab. The app stays open.
 ### Earn More Time — Mindfully
 | Method | Bonus | The Catch |
 |--------|-------|------------|
-| Watch a rewarded ad | +1 min (configurable) | Must watch 30 seconds minimum |
+| Wait 30 seconds | +1 min (configurable) | The timer resets if you leave the app or shrink the window, so it cannot run in the background |
 | Type a 50-word challenge | +1 min | Exact match required. No copy-paste. |
 
 Both are intentionally inconvenient — that's the point. If you really need more time, you'll do it. If not, you'll put the phone down.
 
+The 30-second wait is **not an advertisement and contains no ad SDK**. It is a plain timer dialog that shows a link to [yourwatch.no](https://yourwatch.no), where we sell custom watches. It makes no network requests. If you tap the link, your browser opens our site — that is the only thing it does.
+
 ### Settings That Can't Be Undone on Impulse
-- Editing limits, groups, or tab blockers requires completing the same ad-or-type challenge
+- Editing limits, groups, or tab blockers requires completing the same wait-or-type challenge
 - Toggle Settings Lock on/off in Settings → Security
 - Prevents the "I'll just add 5 more minutes..." spiral
 
@@ -182,7 +185,7 @@ Unplug runs an **Android Accessibility Service** that watches which app is in th
 1. **Check time** — reads today's usage from Android's built-in UsageStats
 2. **Check tab** — scans the view hierarchy for banned in-app features (Shorts, Reels, Spotlight...)
 3. **Enforce** — if time is up or tab is blocked, presses BACK to exit the feature. If time limit hit, force-closes the app.
-4. **Show lock screen** — full-screen popup with ad and typing challenge options
+4. **Show lock screen** — full-screen popup with wait and typing challenge options
 
 Everything runs on-device. SharedPreferences stores your groups, limits, and bonus time. The native Kotlin service reads these directly — no network calls during enforcement.
 
@@ -206,7 +209,6 @@ flutter build apk --release
 | UI Framework | Flutter (Cupertino widgets, dark theme) |
 | Frontend Language | Dart |
 | Native Enforcement | Kotlin (AccessibilityService) |
-| Ads | Google Mobile Ads SDK (rewarded video) |
 | Storage | SharedPreferences |
 | Usage Tracking | `usage_stats` package |
 | Bridge | MethodChannel (Flutter ↔ Android) |
@@ -219,7 +221,7 @@ Unplug/
 │   ├── main.dart                       # Entry point, CupertinoApp, method channel
 │   ├── home_screen.dart                # Dashboard with ring chart + stats
 │   ├── onboarding_screen.dart          # Permission setup flow
-│   ├── settings_screen.dart            # Locked settings (ad/type to unlock)
+│   ├── settings_screen.dart            # Locked settings (wait/type to unlock)
 │   ├── lock_screen_popup.dart          # Non-dismissible lock dialog + bypass
 │   ├── screens/
 │   │   └── app_picker_screen.dart      # Searchable installed apps list
@@ -227,16 +229,15 @@ Unplug/
 │   │   └── app_group.dart              # AppGroup + BannedFeature models
 │   ├── services/
 │   │   ├── storage_service.dart        # SharedPreferences persistence
-│   │   ├── usage_tracker.dart          # Usage stats polling
-│   │   ├── app_closure_handler.dart    # MethodChannel bridge
-│   │   ├── ad_reward_system.dart       # Rewarded ad integration
+│   │   ├── usage_tracker.dart          # Usage stats queries (dashboard display)
+│   │   ├── reward_gate.dart            # 30-second wait timer that grants bonus time
 │   │   └── message_verification.dart   # Typing challenge logic
 │   └── utils/
 │       └── no_paste_formatter.dart     # Clipboard paste blocker
 └── android/
+    └── android/
     └── app/src/main/kotlin/com/egbytest/unplug/
-        ├── MainActivity.kt             # FlutterActivity + MethodChannel
-        ├── AppClosureHandler.kt        # Force-close / home redirect
+        ├── MainActivity.kt              # FlutterActivity + MethodChannel
         └── UsageAccessibilityService.kt # Foreground watch + enforcement + tab blocking
 ```
 
@@ -248,7 +249,7 @@ Unplug/
 ### Verify a release
 1. Check the release tag (`v1.1.0`) and the published `VERSION` file match.
 2. Optionally rebuild the APK from the tagged source yourself (`flutter build apk --release`) and compare behavior/checksum expectations.
-3. Audit network usage: search the codebase for `HttpClient`, `http`, `WebView`, and `counterapi` — every outbound request is in `lib/services/update_checker.dart` (update check) and the ads SDK (rewarded ads only).
+3. Audit network usage: search the codebase for `HttpClient`, `http`, `WebView`, and `Socket` — every outbound request is in `lib/services/update_checker.dart`. There is no ad SDK and no analytics SDK to find; if you find one, that is a red flag.
 
 ### Build notes
 - The app version lives in **one** place: the `version:` line in `pubspec.yaml`. `lib/generated/app_version.dart` is generated from it by `tool/gen_version.sh` — never edit that file by hand. Regenerate with `./tool/gen_version.sh` after changing the version.
@@ -263,8 +264,8 @@ Releases before v1.0.0 exist twice under two tag series on the same commits: a `
 
 - No analytics. No tracking. No accounts.
 - All data (groups, limits, usage history) stored locally in SharedPreferences — on your phone, nowhere else.
-- Update checks query the public GitHub Releases API. Nothing else is contacted except the ads SDK, and only when you choose to watch an ad.
-- Rewarded ads (Google Mobile Ads SDK) load only when you choose to watch an ad.
+- Update checks query the public GitHub Releases API. That is the only outbound request the app makes.
+- The 30-second wait for bonus time is a local timer dialog. It contains no ad SDK and makes no network requests; it links to our own site, which opens in your browser if you tap it.
 - Source code is fully open — verify every claim yourself.
 
 ---
