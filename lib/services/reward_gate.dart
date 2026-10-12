@@ -3,16 +3,18 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-/// Grants bonus time in exchange for a 30-second wait.
+/// Grants bonus time in exchange for a timed wait.
 ///
 /// This is a local timer dialog, not an advertisement. It contains no ad
 /// SDK, contacts no ad network, and makes no network requests at all. The
 /// dialog shows a link to the project's own store; tapping it hands off to
 /// the browser via url_launcher, which is the only external interaction.
 ///
-/// The wait exists to cost something. The timer resets to 30 whenever the
-/// app is backgrounded or the window shrinks, so it cannot be run away in
-/// split-screen or a floating window while doing something else.
+/// The wait exists to cost something. How long it costs is the user's setting
+/// ([StorageService.waitSeconds], 30s to 5m) — this class never decides it. The
+/// timer resets in full whenever the app is backgrounded or the window
+/// shrinks, so it cannot be run away in split-screen or a floating window
+/// while doing something else.
 class RewardGate {
   static final RewardGate _instance = RewardGate._internal();
   factory RewardGate() => _instance;
@@ -20,13 +22,18 @@ class RewardGate {
 
   /// Presents the wait dialog. [onRewardGranted] fires once the wait
   /// completes; [onCancelled] fires if the user backs out.
+  ///
+  /// [totalSeconds] is how long the wait runs, from [StorageService.waitSeconds]
+  /// — the user's setting. Callers must not hardcode it.
   void showWait(
     BuildContext context,
     VoidCallback onRewardGranted,
     VoidCallback onCancelled, {
+    required int totalSeconds,
     int accumulatedSeconds = 0,
   }) {
-    _presentWaitScreen(context, onRewardGranted, onCancelled, accumulatedSeconds);
+    _presentWaitScreen(
+        context, onRewardGranted, onCancelled, accumulatedSeconds, totalSeconds);
   }
 
   void _presentWaitScreen(
@@ -34,11 +41,13 @@ class RewardGate {
     VoidCallback onRewardGranted,
     VoidCallback onCancelled,
     int accumulatedSeconds,
+    int totalSeconds,
   ) {
     showCupertinoDialog(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => _WaitDialog(
+        totalSeconds: totalSeconds,
         accumulatedSeconds: accumulatedSeconds,
         onComplete: onRewardGranted,
         onCancel: onCancelled,
@@ -48,11 +57,13 @@ class RewardGate {
 }
 
 class _WaitDialog extends StatefulWidget {
+  final int totalSeconds;
   final int accumulatedSeconds;
   final VoidCallback onComplete;
   final VoidCallback onCancel;
 
   const _WaitDialog({
+    required this.totalSeconds,
     required this.accumulatedSeconds,
     required this.onComplete,
     required this.onCancel,
@@ -63,7 +74,7 @@ class _WaitDialog extends StatefulWidget {
 }
 
 class _WaitDialogState extends State<_WaitDialog> with WidgetsBindingObserver {
-  int _remaining = 30;
+  late int _remaining;
   late Timer _timer;
   bool _cancelled = false;
   bool _paused = false;
@@ -73,6 +84,7 @@ class _WaitDialogState extends State<_WaitDialog> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    _remaining = widget.totalSeconds;
     WidgetsBinding.instance.addObserver(this);
     // Capture the initial full-screen size so we can detect
     // floating / split-screen / pop-up views where the window shrinks.
@@ -108,7 +120,7 @@ class _WaitDialogState extends State<_WaitDialog> with WidgetsBindingObserver {
         if (!_paused) {
           setState(() {
             _paused = true;
-            _remaining = 30;
+            _remaining = widget.totalSeconds;
           });
         }
         return;
@@ -117,7 +129,7 @@ class _WaitDialogState extends State<_WaitDialog> with WidgetsBindingObserver {
       if (_paused) {
         setState(() {
           _paused = false;
-          _remaining = 30;
+          _remaining = widget.totalSeconds;
         });
         return;
       }
@@ -200,7 +212,9 @@ class _WaitDialogState extends State<_WaitDialog> with WidgetsBindingObserver {
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(4),
                 child: LinearProgressIndicator(
-                  value: _paused ? 0 : (30 - _remaining) / 30.0,
+                  value: _paused
+                      ? 0
+                      : (widget.totalSeconds - _remaining) / widget.totalSeconds,
                   backgroundColor: Colors.white12,
                   valueColor: AlwaysStoppedAnimation<Color>(
                     CupertinoTheme.of(context).primaryColor,

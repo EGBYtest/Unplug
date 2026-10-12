@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <strong>Version 1.1.8</strong>
+  <strong>Version 1.8.9</strong>
 </p>
 
 ---
@@ -124,10 +124,12 @@ Smart detection exits only the blocked tab. The app stays open.
 ### Earn More Time — Mindfully
 | Method | Bonus | The Catch |
 |--------|-------|------------|
-| Wait 30 seconds | +1 min (configurable, up to 20 min) | The timer resets if you leave the app or shrink the window, so it cannot run in the background |
+| Wait 30 seconds (configurable, 30s–5m) | +1 min (configurable, up to 20 min) | The timer resets in full if you leave the app or shrink the window, so it cannot run in the background |
 | Type a 50-word challenge | +1 min | Exact match required. No copy-paste. |
 
 Both are intentionally inconvenient — that's the point. If you really need more time, you'll do it. If not, you'll put the phone down.
+
+**Both halves of the trade are yours to set.** How long you wait is adjustable from **30 seconds to 5 minutes** in Settings → Reward-to-Time Ratio → Wait Duration, and what a completed wait pays is adjustable from **0 to 20 minutes** on the adjacent "Reward per Wait" setting. Setting a longer wait does not increase the bonus — it is the same cost and the same payout, which is the point: the app should not get to decide how much friction you are willing to accept.
 
 The 30-second wait is **not an advertisement and contains no ad SDK**. It is a plain timer dialog that shows a link to [yourwatch.no](https://yourwatch.no), where we sell custom watches. It makes no network requests. If you tap the link, your browser opens our site — that is the only thing it does.
 
@@ -178,7 +180,7 @@ Settings → Accessibility → Downloaded apps → Unplug
 
 ## Download
 
-**[Download the newest APK (v1.1.8)](https://github.com/EGBYtest/Unplug/releases/latest)** from GitHub Releases.
+**[Download the newest APK (v1.8.9)](https://github.com/EGBYtest/Unplug/releases/latest)** from GitHub Releases.
 
 Requirements:
 - Android 7.0+ (API 24) — raised from API 22 in v1.1.0 by the Flutter toolchain bump
@@ -198,7 +200,7 @@ Unplug checks GitHub for a newer release and shows a blue **"Update vX.Y.Z avail
 - The dashboard polls every 10 minutes, but the checker itself allows at most one real network lookup every 30 minutes, and a cold start always checks immediately (the cache lives in the app process).
 - If a release is newer but the banner does not appear, that is a real failure worth reporting with the version from Settings → About and `adb logcat -s Unplug: UpdateChecker`.
 
-> **If you are on v1.1.7 or older, download v1.1.8 manually.** Those builds were missing the `INTERNET` permission and could not reach the network, so the banner was never going to appear for you — and, for the same reason, those builds cannot discover v1.1.8 on their own. This was fixed in v1.1.8. Once you are on v1.1.8, updates work normally.
+> **If you are on v1.1.7 or older, download v1.8.9 manually.** Those builds were missing the `INTERNET` permission and could not reach the network, so the banner was never going to appear for you — and, for the same reason, those builds cannot discover any newer release on their own. This was fixed in v1.1.8. Once you are on v1.1.8 or later, updates work normally.
 
 ---
 
@@ -276,7 +278,7 @@ Unplug/
 - Android minSdk 24 / targetSdk 36
 
 ### Verify a release
-1. Check the release tag (`v1.1.8`) and the published `VERSION` file match.
+1. Check the release tag (`v1.8.9`) and the published `VERSION` file match.
 2. Optionally rebuild the APK from the tagged source yourself (`flutter build apk --release`) and compare behavior/checksum expectations.
 3. Audit network usage: search the codebase for `HttpClient`, `http`, `WebView`, and `Socket` — every outbound request is in `lib/services/update_checker.dart`. There is no ad SDK and no analytics SDK to find; if you find one, that is a red flag.
 

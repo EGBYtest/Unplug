@@ -101,6 +101,53 @@ class StorageService {
     await _prefs?.remove(_bonusKey(groupName));
   }
 
+  // ─── Wait duration ──────────────────────────────────────────────────────────
+  // How long the bonus-time wait actually runs, in seconds.
+  //
+  // Distinct from bonusRewardSeconds: that is what you are PAID, this is what
+  // it COSTS you. Raising the wait is the half of the trade the app does not
+  // get to decide, so it has to be the user's setting and not a constant.
+
+  /// Floor. The original hardcoded wait. Below this the friction that makes
+  /// the feature work stops being friction.
+  static const int minWaitSeconds = 30;
+
+  /// Ceiling. Beyond this the wait stops being a negotiation and becomes a
+  /// punishment — long enough that a user in the middle of something will just
+  /// uninstall instead, which is the exact opposite of the intended outcome.
+  static const int maxWaitSeconds = 5 * 60;
+
+  static const int defaultWaitSeconds = 30;
+
+  /// Step between selectable values. 30s granularity keeps the list short
+  /// enough to be a deliberate choice rather than a scroll to be lost in.
+  static const int waitStepSeconds = 30;
+
+  /// Every selectable wait duration, from the floor up to and including the
+  /// ceiling. An explicit bounded list, for the same reason
+  /// [bonusRewardOptions] is one: CupertinoTimerPicker has no min/max and will
+  /// scroll past any bound and silently clamp on save.
+  static List<int> waitOptions() => [
+        for (int s = minWaitSeconds; s <= maxWaitSeconds; s += waitStepSeconds)
+          s,
+      ];
+
+  /// Clamped on read as well as on write, so a stored value outside the range
+  /// is corrected the moment the app launches rather than producing an
+  /// unskippable or instantly-expiring wait.
+  int get waitSeconds {
+    final stored =
+        _prefs?.getInt('wait_seconds') ?? defaultWaitSeconds;
+    return stored.clamp(minWaitSeconds, maxWaitSeconds);
+  }
+
+  Future<void> saveWaitSeconds(int seconds) async {
+    await _prefs?.setInt(
+      'wait_seconds',
+      seconds.clamp(minWaitSeconds, maxWaitSeconds),
+    );
+  }
+
   // ─── Settings Lock ──────────────────────────────────────────────────────────
 
   bool get settingsLockEnabled => _prefs?.getBool('settings_lock_enabled') ?? true;

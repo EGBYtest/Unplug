@@ -112,4 +112,84 @@ void main() {
       expect(StorageService().bonusRewardSeconds, 1200);
     });
   });
+
+  group('wait duration is bounded', () {
+    // The wait is the friction the whole feature rests on. If it can be set
+    // below the floor the friction stops being friction; if it can be set
+    // above the ceiling it stops being a negotiation and starts being a
+    // punishment, and the user uninstalls instead — the opposite of the point.
+    Future<void> openWaitPicker(WidgetTester tester) async {
+      await StorageService().setSettingsLockEnabled(false);
+      await openSettings(tester);
+      await tester.tap(find.text('Wait Duration').first);
+      await tester.pumpAndSettle();
+    }
+
+    test('options run from 30s to 5m in 30s steps', () {
+      final options = StorageService.waitOptions();
+      expect(options.first, StorageService.minWaitSeconds);
+      expect(options.last, StorageService.maxWaitSeconds);
+      expect(options.contains(30), isTrue);
+      expect(options.contains(300), isTrue);
+      // Nothing outside the range is ever offered.
+      expect(options.every((s) => s >= 30 && s <= 300), isTrue);
+    });
+
+    test('defaults to the original 30s wait', () async {
+      expect(StorageService().waitSeconds, 30);
+    });
+
+    test('a stored value below the floor is corrected on read', () async {
+      // A value out of range can only get there by tampering or a future
+      // schema change. It must not produce a wait that costs nothing.
+      await StorageService().saveWaitSeconds(5);
+      expect(StorageService().waitSeconds, StorageService.minWaitSeconds);
+    });
+
+    test('a stored value above the ceiling is corrected on read', () async {
+      await StorageService().saveWaitSeconds(99999);
+      expect(StorageService().waitSeconds, StorageService.maxWaitSeconds);
+    });
+
+    test('a value inside the range round-trips', () async {
+      await StorageService().saveWaitSeconds(120);
+      expect(StorageService().waitSeconds, 120);
+    });
+
+    testWidgets('the picker shows the range and opens', (tester) async {
+      await openWaitPicker(tester);
+      expect(find.text('30s to 5m. A longer wait earns the same bonus.'),
+          findsOneWidget);
+      expect(find.byType(CupertinoPicker), findsOneWidget);
+    });
+
+    testWidgets('dragging hard past the end does not exceed the ceiling',
+        (tester) async {
+      await openWaitPicker(tester);
+
+      for (var i = 0; i < 8; i++) {
+        await tester.drag(find.byType(CupertinoPicker), const Offset(0, -600));
+        await tester.pumpAndSettle();
+      }
+      await tester.tap(find.text('Save').last);
+      await tester.pumpAndSettle();
+
+      expect(StorageService().waitSeconds, StorageService.maxWaitSeconds);
+    });
+
+    testWidgets('dragging hard past the start does not go below the floor',
+        (tester) async {
+      await StorageService().saveWaitSeconds(300);
+      await openWaitPicker(tester);
+
+      for (var i = 0; i < 8; i++) {
+        await tester.drag(find.byType(CupertinoPicker), const Offset(0, 600));
+        await tester.pumpAndSettle();
+      }
+      await tester.tap(find.text('Save').last);
+      await tester.pumpAndSettle();
+
+      expect(StorageService().waitSeconds, StorageService.minWaitSeconds);
+    });
+  });
 }

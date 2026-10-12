@@ -22,6 +22,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late List<AppGroup> _groups;
   late List<BannedFeature> _globalTabBlockers;
   late int _bonusRewardSeconds;
+  late int _waitSeconds;
   late int _resetHour;
   late bool _settingsLock;
 
@@ -31,6 +32,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _groups = List.from(_storage.loadGroups());
     _globalTabBlockers = List.from(_storage.loadGlobalTabBlockers());
     _bonusRewardSeconds = _storage.bonusRewardSeconds;
+    _waitSeconds = _storage.waitSeconds;
     _resetHour = _storage.resetHour;
     _settingsLock = _storage.settingsLockEnabled;
   }
@@ -52,14 +54,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
           CupertinoActionSheetAction(
             onPressed: () {
               Navigator.pop(context);
-              RewardGate().showWait(context, action, () {});
+              RewardGate().showWait(
+                context,
+                action,
+                () {},
+                totalSeconds: _storage.waitSeconds,
+              );
             },
-            child: const Row(
+            child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Icon(CupertinoIcons.clock_fill, color: Color(0xFF0A84FF), size: 18),
                 SizedBox(width: 8),
-                Text('Wait 30s', style: TextStyle(fontWeight: FontWeight.bold)),
+                Text(
+                  'Wait ${_formatSeconds(_storage.waitSeconds)}',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
               ],
             ),
           ),
@@ -307,6 +317,82 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  // ─── Edit Wait Duration ─────────────────────────────────────────────────────
+
+  void _editWaitDuration() {
+    final options = StorageService.waitOptions();
+    var selectedIndex = options.indexOf(_waitSeconds);
+    if (selectedIndex < 0) selectedIndex = options.indexOf(StorageService.defaultWaitSeconds);
+    if (selectedIndex < 0) selectedIndex = 0;
+
+    showCupertinoModalPopup(
+      context: context,
+      builder: (_) => Container(
+        height: 340,
+        decoration: const BoxDecoration(
+          color: Color(0xFF1C1C1E),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  CupertinoButton(
+                    padding: EdgeInsets.zero,
+                    child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                  const Text('Wait Duration', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                  CupertinoButton(
+                    padding: EdgeInsets.zero,
+                    child: const Text('Save', style: TextStyle(color: Color(0xFF0A84FF), fontWeight: FontWeight.bold)),
+                    onPressed: () async {
+                      final value = options[selectedIndex];
+                      setState(() => _waitSeconds = value);
+                      await _storage.saveWaitSeconds(value);
+                      if (mounted) Navigator.pop(context);
+                    },
+                  ),
+                ],
+              ),
+            ),
+            const Divider(color: Colors.white12, height: 1),
+            const Text('How long you wait for bonus time', style: TextStyle(color: Colors.white54, fontSize: 13)),
+            const Padding(
+              padding: EdgeInsets.only(bottom: 4),
+              child: Text(
+                '30s to 5m. A longer wait earns the same bonus.',
+                style: TextStyle(color: Colors.white38, fontSize: 12),
+              ),
+            ),
+            Expanded(
+              // Bounded list from StorageService.waitOptions(), so it cannot
+              // be scrolled past either end.
+              child: CupertinoPicker(
+                itemExtent: 40,
+                scrollController:
+                    FixedExtentScrollController(initialItem: selectedIndex),
+                onSelectedItemChanged: (i) => selectedIndex = i,
+                children: options
+                    .map((s) => Center(
+                          child: Text(
+                            _formatSeconds(s),
+                            style: const TextStyle(
+                                color: Colors.white, fontSize: 20),
+                          ),
+                        ))
+                    .toList(),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   // ─── Edit Apps in Group ───────────────────────────────────────────────────
 
   void _editGroupApps(int index) async {
@@ -460,6 +546,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       additionalInfo: Text(_formatSeconds(_bonusRewardSeconds), style: const TextStyle(color: Colors.white70)),
                       trailing: const CupertinoListTileChevron(),
                       onTap: () => _confirmChange(_editAdRatio),
+                    ),
+                    CupertinoListTile(
+                      backgroundColor: const Color(0xFF1C1C1E),
+                      leading: const Icon(CupertinoIcons.clock_fill, color: Color(0xFF0A84FF), size: 22),
+                      title: const Text('Wait Duration', style: TextStyle(color: Colors.white)),
+                      subtitle: const Text('30s to 5m', style: TextStyle(color: Colors.white38, fontSize: 12)),
+                      additionalInfo: Text(_formatSeconds(_waitSeconds), style: const TextStyle(color: Colors.white70)),
+                      trailing: const CupertinoListTileChevron(),
+                      onTap: () => _confirmChange(_editWaitDuration),
                     ),
                   ],
                 ),

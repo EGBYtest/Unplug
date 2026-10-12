@@ -97,6 +97,7 @@ class _LockScreenPopupState extends State<LockScreenPopup> {
       () {
         if (mounted) setState(() => _showTypeChallenge = true);
       },
+      totalSeconds: _storage.waitSeconds,
     );
   }
 
