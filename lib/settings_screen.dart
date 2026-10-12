@@ -464,7 +464,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   backgroundColor: Colors.black,
                   decoration: BoxDecoration(color: const Color(0xFF1C1C1E), borderRadius: BorderRadius.circular(12)),
                   header: const Text('SECURITY', style: TextStyle(color: Colors.white54)),
-                  footer: const Text('When on, changing settings requires the 30-second wait or typing challenge. Turn off to apply changes instantly.', style: TextStyle(color: Colors.white38, fontSize: 12)),
+                  footer: const Text('When on, changing settings requires the 30-second wait or typing challenge — including turning this off. Turn on to lock it back up.', style: TextStyle(color: Colors.white38, fontSize: 12)),
                   children: [
                     CupertinoListTile(
                       backgroundColor: const Color(0xFF1C1C1E),
@@ -482,8 +482,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       trailing: CupertinoSwitch(
                         value: _settingsLock,
                         onChanged: (val) {
-                          setState(() => _settingsLock = val);
-                          _storage.setSettingsLockEnabled(val);
+                          // Turning the lock ON is always free — locking
+                          // yourself in is not a way around it. Turning it OFF
+                          // removes the challenge from every other setting
+                          // here, so it costs the same as any of them.
+                          if (val) {
+                            setState(() => _settingsLock = true);
+                            _storage.setSettingsLockEnabled(true);
+                          } else {
+                            _confirmChange(() {
+                              setState(() => _settingsLock = false);
+                              _storage.setSettingsLockEnabled(false);
+                            });
+                          }
                         },
                       ),
                     ),
