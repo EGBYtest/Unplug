@@ -29,15 +29,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   UpdateInfo? _updateInfo;
   bool _updateDismissed = false;
 
-  static final Uri _latestReleaseUrl =
-      Uri.parse('https://github.com/EGBYtest/Unplug/releases/latest');
-
-  Future<void> _openLatestRelease() async {
-    if (await canLaunchUrl(_latestReleaseUrl)) {
-      await launchUrl(_latestReleaseUrl, mode: LaunchMode.externalApplication);
-    }
-  }
-
   @override
   void initState() {
     super.initState();
@@ -56,11 +47,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _checkUpdate() async {
-    var info = UpdateChecker.cachedUpdate;
-    info ??= await UpdateChecker.check();
-    if (mounted && info.isAvailable) {
-      setState(() => _updateInfo = info);
-    }
+    var cached = UpdateChecker.cachedUpdate;
+    final UpdateInfo info = cached ?? await UpdateChecker.check();
+    if (!mounted) return;
+    setState(() {
+      if (info.isAvailable) {
+        _updateInfo = info;
+      } else {
+        _updateInfo = null;
+        _updateDismissed = false;
+      }
+    });
   }
 
   Future<void> _checkPermissionsOnStart() async {
@@ -193,7 +190,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             sliver: SliverList(
               delegate: SliverChildListDelegate([
                 const SizedBox(height: 24),
-                _buildDownloadButton(),
                 if (_updateInfo != null && !_updateDismissed) _buildUpdateBanner(),
                 _buildRing(),
                 const SizedBox(height: 16),
@@ -406,29 +402,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 const SizedBox(height: 2),
                 Text(subtitle, style: TextStyle(fontSize: 12, color: ringColor, fontWeight: FontWeight.w600)),
               ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDownloadButton() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-      child: CupertinoButton.filled(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        borderRadius: BorderRadius.circular(12),
-        onPressed: _openLatestRelease,
-        child: const Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(CupertinoIcons.cloud_download_fill, size: 18),
-            SizedBox(width: 8),
-            Text(
-              'Download newest official APK',
-              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
             ),
           ],
         ),
