@@ -18,10 +18,21 @@ void main() {
     // These are the only two update sources left. If either breaks the app
     // silently stops offering updates, so pin them here. Separate client per
     // request because closing one HttpClient invalidates in-flight ones.
+    //
+    // Unauthenticated, GitHub allows 60 requests per hour per IP — the same
+    // budget the app spends on a user's behalf, and shared across everyone
+    // behind one carrier NAT. Running these unauthenticated could exhaust the
+    // app's own budget and suppress update checks on the user's device. Set
+    // GITHUB_TOKEN to run them authenticated (5000/hour) instead.
     Future<({int status, String body})> fetch(String url) async {
       final client = HttpClient();
       client.connectionTimeout = const Duration(seconds: 10);
-      final res = await client.getUrl(Uri.parse(url)).then((r) => r.close());
+      final req = await client.getUrl(Uri.parse(url));
+      final token = Platform.environment['GITHUB_TOKEN'];
+      if (token != null && token.isNotEmpty) {
+        req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
+      }
+      final res = await req.close();
       final body = await res.transform(utf8.decoder).join();
       client.close();
       return (status: res.statusCode, body: body);
@@ -173,7 +184,7 @@ void main() {
     // hidden for the whole session. Returning null here is the only thing a
     // non-newer release may do — there is nowhere for it to persist.
     String payload(String tag) => jsonEncode({'tag_name': tag});
-    final parse = UpdateChecker.fromReleasePayload;
+    const parse = UpdateChecker.fromReleasePayload;
 
     test('a newer release yields an available update', () {
       final info = parse(payload('v1.2.0'), '1.1.3');

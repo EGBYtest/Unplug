@@ -161,7 +161,7 @@ class UsageAccessibilityService : AccessibilityService() {
             }
 
             // Check time limit
-            val bonus = prefs.getFlutterInt("flutter.bonus_seconds_$groupName", 0)
+            val bonus = bonusSecondsFor(groupName, prefs)
             val totalLimit = limit + (bonus / 60)
             if (totalLimit == 0) { blockApp(pkg, groupName); return }
 
@@ -173,6 +173,42 @@ class UsageAccessibilityService : AccessibilityService() {
                 Log.i(TAG, "ok $pkg ($groupName): ${usedMinutes}m / ${totalLimit}m (bonus=${bonus}s, resetHour=${prefs.getFlutterInt("flutter.reset_hour", 2)})")
             }
             return
+        }
+    }
+
+    // ─── Bonus time ─────────────────────────────────────────────────────
+    //
+    // The bonus key is scoped to the day it was earned on:
+    //   flutter.bonus_seconds_<group>_<YYYY-MM-DD>
+    //
+    // This service reads SharedPreferences directly and never runs Dart. An
+    // unscoped key was only ever cleared by Dart running — at app launch or on
+    // the next read — so a user who did not open Unplug across the reset hour
+    // kept yesterday's bonus in force here, while the dashboard (which did
+    // check) showed zero. Day-scoping the key makes a stale balance simply
+    // not exist for either reader, with no dependence on the app running.
+    //
+    // The key format is a cross-language contract; StorageService._bonusKey
+    // builds the same string. Keep the two in step.
+    private fun bonusSecondsFor(groupName: String, prefs: SharedPreferences): Int {
+        val day = dayStart(prefs)
+        val key = String.format(
+            "flutter.bonus_seconds_%s_%04d-%02d-%02d",
+            groupName,
+            day.get(Calendar.YEAR),
+            day.get(Calendar.MONTH) + 1,
+            day.get(Calendar.DAY_OF_MONTH),
+        )
+        return prefs.getFlutterInt(key, 0)
+    }
+
+    /** Start of the current usage day — midnight of the reset hour. */
+    private fun dayStart(prefs: SharedPreferences): Calendar {
+        val resetHour = prefs.getFlutterInt("flutter.reset_hour", 2)
+        return Calendar.getInstance().apply {
+            if (get(Calendar.HOUR_OF_DAY) < resetHour) add(Calendar.DAY_OF_MONTH, -1)
+            set(Calendar.HOUR_OF_DAY, resetHour); set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
         }
     }
 
@@ -197,12 +233,7 @@ class UsageAccessibilityService : AccessibilityService() {
     private fun groupUsageMinutes(groupName: String, prefs: SharedPreferences): Int {
         return try {
             val usm = getSystemService(USAGE_STATS_SERVICE) as UsageStatsManager
-            val resetHour = prefs.getFlutterInt("flutter.reset_hour", 2)
-            val cal = Calendar.getInstance().apply {
-                if (get(Calendar.HOUR_OF_DAY) < resetHour) add(Calendar.DAY_OF_MONTH, -1)
-                set(Calendar.HOUR_OF_DAY, resetHour); set(Calendar.MINUTE, 0)
-                set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
-            }
+            val cal = dayStart(prefs)
             var stats = usm.queryUsageStats(UsageStatsManager.INTERVAL_BEST, cal.timeInMillis, System.currentTimeMillis())
             if (stats.isNullOrEmpty()) stats = usm.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, cal.timeInMillis, System.currentTimeMillis())
 
@@ -873,7 +904,7 @@ class UsageAccessibilityService : AccessibilityService() {
                 val p = root.packageName?.toString()?.trim() ?: continue
                 val pair = pkgToGroup[p] ?: continue
                 val (name, limit) = pair
-                val bonus = prefs.getFlutterInt("flutter.bonus_seconds_$name", 0)
+                val bonus = bonusSecondsFor(name, prefs)
                 val totalLimit = limit + (bonus / 60)
                 if (totalLimit == 0 || groupUsageMinutes(name, prefs) >= totalLimit) {
                     blockApp(p, name); return

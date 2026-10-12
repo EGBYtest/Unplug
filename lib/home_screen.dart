@@ -39,17 +39,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _refreshTimer = Timer.periodic(const Duration(seconds: 60), (_) => _loadUsage());
     WidgetsBinding.instance.addPostFrameCallback((_) => _checkPermissionsOnStart());
     _checkUpdate();
+    // The timer is a nudge, not a demand. UpdateChecker holds a request for
+    // at least minCheckInterval, so this costs nothing until the window has
+    // passed. It fires often mainly so the banner appears soon after a release
+    // for someone already sitting in the app.
     _updateCheckTimer = Timer.periodic(const Duration(minutes: 10), (_) {
       _checkUpdate();
     });
   }
 
   Future<void> _checkUpdate() async {
-    // Always a fresh fetch. This used to read a static cache that main() had
-    // started populating without awaiting, so the first screen render raced
-    // an in-flight request and would latch onto its result. A single failed
-    // check at startup cached a negative answer that then suppressed the
-    // banner for the whole session.
+    // UpdateChecker owns the caching and the request budget, so a resume does
+    // not cost a request. The cache here used to be a static written without
+    // awaiting in main(), which the first render raced; that is gone.
     final UpdateInfo info = await UpdateChecker.check();
     if (!mounted) return;
     setState(() {

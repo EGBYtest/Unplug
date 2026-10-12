@@ -28,61 +28,167 @@ class UpdateChecker {
 
   static const String _userAgent = 'Unplug/${AppVersion.full}';
 
-  static Future<UpdateInfo> check() async {
-    final result = await _tryFetch(_githubApi, _parseReleaseJson);
-    if (result != null) return result;
+  /// Shortest gap between real network lookups.
+  ///
+  /// The dashboard checked on every app resume, and GitHub's unauthenticated
+  /// API allows 60 requests per hour per IP. A user glancing at their phone
+  /// dozens of times could exhaust that on their own — and mobile carriers
+  /// put many users behind one IP, so the ceiling is shared. Once spent, the
+  /// API returns 403, the app falls through to the raw VERSION file, and
+  /// that file is served from a slower CDN cache — so the banner silently
+  /// stops appearing with no error anywhere. Throttling keeps a normal user
+  /// at roughly two requests an hour.
+  static const Duration minCheckInterval = Duration(minutes: 30);
 
-    log('UpdateChecker: github API failed, trying raw fallback...');
-    final fallback = await _tryFetch(_githubFallback, _parseVersionFile);
-    if (fallback != null) return fallback;
+  static DateTime? _lastCheckAt;
+  static UpdateInfo? _lastResult;
+  static int _requestCount = 0;
 
-    return _noUpdate();
+  /// Number of network lookups made this session.
+  ///
+  /// Exposed because the failure this throttling fixes is invisible otherwise:
+  /// when the budget is spent the app still returns a plausible answer and
+  /// shows nothing. Being able to count requests is what makes the budget a
+  /// testable property rather than a hope.
+  @visibleForTesting
+  static int get requestCount => _requestCount;
+
+  /// Drops the cached answer so the next [check] goes to the network.
+  static void invalidate() {
+    _lastCheckAt = null;
+    _lastResult = null;
   }
 
-  static Future<UpdateInfo?> _tryFetch(
+  /// Checks for a newer release.
+  ///
+  /// [currentVersion] defaults to this build's version. It is a parameter so
+  /// the "an older build sees a newer release" path can be exercised against
+  /// the real sources — that is the path a user is on when they expect the
+  /// banner, and it is the one that has gone quiet before.
+  ///
+  /// Repeated calls within [minCheckInterval] reuse the last answer rather
+  /// than spending another request. Pass [force] to always go out.
+  static Future<UpdateInfo> check({
+    String currentVersion = _currentVersion,
+    bool force = false,
+    String? authToken,
+  }) async {
+    // Only the production path is cached: a result is only meaningful for the
+    // version it was computed against. Auth does not affect what the answer
+    // means, so it does not affect caching — and the throttle has to hold for
+    // the tests too, or they would not be exercising the real behaviour.
+    final cacheable = currentVersion == _currentVersion;
+    if (cacheable && !force && _cached() != null) {
+      log('UpdateChecker: reusing cached result within $minCheckInterval');
+      return _cached()!;
+    }
+
+    final result = await _checkNow(currentVersion, authToken);
+    if (cacheable && result.reached) {
+      // Only cache when a source actually answered. Caching a total failure
+      // would suppress the banner for the whole window after one bad moment.
+      _lastResult = result.info;
+      _lastCheckAt = DateTime.now();
+    }
+    return result.info;
+  }
+
+  static UpdateInfo? _cached() {
+    final at = _lastCheckAt;
+    if (_lastResult == null || at == null) return null;
+    if (DateTime.now().difference(at) >= minCheckInterval) return null;
+    return _lastResult;
+  }
+
+  static Future<({UpdateInfo info, bool reached})> _checkNow(
+    String currentVersion,
+    String? authToken,
+  ) async {
+    final api = await _tryFetch(
+        _githubApi, _parseReleaseJson, currentVersion, authToken);
+    if (api.update != null) return (info: api.update!, reached: true);
+
+    log('UpdateChecker: github API unusable, trying raw fallback...');
+    final raw = await _tryFetch(
+        _githubFallback, _parseVersionFile, currentVersion, authToken);
+    if (raw.update != null) return (info: raw.update!, reached: true);
+
+    // "The source answered and there is nothing newer" is not the same thing
+    // as "the source did not answer". Collapsing the two is how a total
+    // failure ends up cached as "no update" and the banner stays hidden.
+    return (info: _noUpdate(), reached: api.ok || raw.ok);
+  }
+
+  /// Fetches one source.
+  ///
+  /// [ok] reports whether the source actually answered and parsed, which is
+  /// independent of whether it found an update.
+  static Future<({UpdateInfo? update, bool ok})> _tryFetch(
     String url,
     String? Function(String body) parser,
+    String currentVersion,
+    String? authToken,
   ) async {
     try {
+      _requestCount++;
       final client = HttpClient();
       client.connectionTimeout = const Duration(seconds: 5);
       client.userAgent = _userAgent;
 
       final request = await client.getUrl(Uri.parse(url));
+      // raw.githubusercontent.com varies its cache on Accept-Encoding, so the
+      // gzip and identity responses are separate objects. Observed directly:
+      // just after a release the gzip object still served the previous
+      // version for ten-plus minutes while the identity object was current.
+      // These payloads are tiny; ask for identity so the fallback reads the
+      // object that keeps up.
+      request.headers.set(HttpHeaders.acceptEncodingHeader, 'identity');
+      if (authToken != null && authToken.isNotEmpty) {
+        request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $authToken');
+      }
       final response = await request.close();
 
-      log('UpdateChecker: HTTP ${response.statusCode} from $url');
-
-      if (response.statusCode != 200) {
+      final status = response.statusCode;
+      log('UpdateChecker: HTTP $status from $url');
+      if (status != 200) {
+        if (status == 403 || status == 429) {
+          log('UpdateChecker: $url rate limited ($status) — falling back to '
+              'the raw VERSION file, which may itself be cached briefly '
+              'behind a release');
+        }
         client.close();
-        return null;
+        return (update: null, ok: false);
       }
 
       final body = await response.transform(utf8.decoder).join();
       client.close();
 
       final latestVersion = parser(body);
-      if (latestVersion == null) return null;
+      if (latestVersion == null) return (update: null, ok: false);
 
-      log('UpdateChecker: latest=$latestVersion current=$_currentVersion');
+      log('UpdateChecker: latest=$latestVersion current=$currentVersion');
 
-      if (latestVersion.isEmpty || latestVersion == _currentVersion) {
-        return null;
+      if (latestVersion.isEmpty || latestVersion == currentVersion) {
+        return (update: null, ok: true);
       }
 
-      if (compareVersions(latestVersion, _currentVersion) > 0) {
+      if (compareVersions(latestVersion, currentVersion) > 0) {
         log('UpdateChecker: update available v$latestVersion');
-        return UpdateInfo(
-          latestVersion: latestVersion,
-          downloadUrl: 'https://github.com/EGBYtest/Unplug/releases/tag/v$latestVersion',
-          isAvailable: true,
+        return (
+          update: UpdateInfo(
+            latestVersion: latestVersion,
+            downloadUrl:
+                'https://github.com/EGBYtest/Unplug/releases/tag/v$latestVersion',
+            isAvailable: true,
+          ),
+          ok: true,
         );
       }
 
-      return null;
+      return (update: null, ok: true);
     } catch (e) {
       log('UpdateChecker: $url error $e');
-      return null;
+      return (update: null, ok: false);
     }
   }
 

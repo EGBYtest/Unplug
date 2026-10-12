@@ -68,8 +68,9 @@ class StorageService {
 
   static const int defaultBonusRewardSeconds = 60;
 
-  /// Step between selectable reward values.
-  static const int bonusRewardStepSeconds = 30;
+  /// Step between selectable reward values. Whole minutes — the reward is a
+  /// budget extension, and sub-minute granularity was noise.
+  static const int bonusRewardStepSeconds = 60;
 
   /// Every selectable reward value, from zero up to and including the cap.
   ///
@@ -97,7 +98,7 @@ class StorageService {
   }
 
   Future<void> resetBonusSeconds(String groupName) async {
-    await _prefs?.remove('bonus_seconds_$groupName');
+    await _prefs?.remove(_bonusKey(groupName));
   }
 
   // ─── Settings Lock ──────────────────────────────────────────────────────────
@@ -289,41 +290,45 @@ class StorageService {
   // ─── Bonus seconds ────────────────────────────────────────────────────────
   // Bonus is stored in SECONDS for precision; limits are in minutes.
 
-  int getBonusSeconds(String groupName) {
-    // The reset has to be evaluated synchronously here. The native
-    // AccessibilityService reads bonus_seconds_* straight out of
-    // SharedPreferences and never runs Dart, so a reset performed only at
-    // app launch would leave yesterday's bonus inflating today's limit on
-    // every day the user does not open Unplug. Kicking off a purge and
-    // reading the key anyway would hand callers the stale value.
-    final today = dayKey(DateTime.now());
-    if ((_prefs?.getString(_lastBonusResetKey) ?? '') != today) {
-      unawaited(_purgeStaleBonuses());
-      return 0;
-    }
-    return _prefs?.getInt('bonus_seconds_$groupName') ?? 0;
-  }
+  /// Key for a group's bonus, scoped to the day it was earned on.
+  ///
+  /// Day-scoping the key rather than clearing it is what makes the daily
+  /// reset hold on both sides. The native AccessibilityService reads this key
+  /// straight out of SharedPreferences and never runs Dart, so a reset that
+  /// depends on Dart executing — at launch, or on a read — leaves yesterday's
+  /// bonus in force for the native limiter on every day the app is not opened.
+  /// With the day in the key, a stale balance is simply not found. No marker,
+  /// no ordering, no dependence on the app running.
+  ///
+  /// The key format is a cross-language contract; UsageAccessibilityService
+  /// builds the same string. Keep the two in step.
+  String _bonusKey(String groupName) =>
+      'bonus_seconds_${groupName}_${dayKey(DateTime.now())}';
+
+  int getBonusSeconds(String groupName) =>
+      _prefs?.getInt(_bonusKey(groupName)) ?? 0;
 
   Future<void> addBonusSeconds(String groupName, int seconds) async {
-    await _purgeStaleBonuses();
-    final current = _prefs?.getInt('bonus_seconds_$groupName') ?? 0;
-    await _prefs?.setInt('bonus_seconds_$groupName', current + seconds);
+    final key = _bonusKey(groupName);
+    final current = _prefs?.getInt(key) ?? 0;
+    unawaited(_purgeStaleBonuses());
+    await _prefs?.setInt(key, current + seconds);
   }
 
-  /// Drops bonus seconds earned on an earlier day. No-op once the stored day
-  /// marker matches today, so it is cheap to call on every read and write.
+  /// Removes bonus keys that are not scoped to today.
+  ///
+  /// Pure housekeeping — correctness does not depend on it, because the day
+  /// suffix already makes a stale balance invisible to both readers. Without
+  /// it these would accumulate one entry per group per day forever.
   Future<void> _purgeStaleBonuses() async {
     final today = dayKey(DateTime.now());
-    if ((_prefs?.getString(_lastBonusResetKey) ?? '') == today) return;
-
     final keys = _prefs?.getKeys() ?? {};
     for (final k in keys) {
-      if (k.startsWith('bonus_seconds_')) await _prefs?.remove(k);
+      if (k.startsWith('bonus_seconds_') && !k.endsWith('-$today')) {
+        await _prefs?.remove(k);
+      }
     }
-    await _prefs?.setString(_lastBonusResetKey, today);
   }
-
-  static const String _lastBonusResetKey = 'last_bonus_reset';
 
   // ─── Daily screen time history ─────────────────────────────────────────────
   // Stores daily totals (minutes) keyed by date string "YYYY-MM-DD".

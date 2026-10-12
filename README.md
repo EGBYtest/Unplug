@@ -82,6 +82,8 @@ When you install and set up Unplug, you will very likely see one or more of the 
 - **The only network request the app ever makes:**
   1. Update checks against the public GitHub Releases API, so the app can tell you when a new version exists.
 
+  Checks are throttled to at most one request every 30 minutes, because GitHub allows only 60 unauthenticated requests per hour per IP — a limit shared by everyone behind the same mobile carrier. Without the throttle, glancing at your phone often enough could spend it, and a rate-limited API falls back to a CDN-cached copy of the version file that can lag a few minutes behind a release.
+
   Earning bonus time involves **no network access whatsoever** — see [Earn More Time](#earn-more-time--mindfully) below. The 30-second wait is a local timer dialog. The sponsor link it contains opens your browser only if you tap it, and it goes to our own site, not to any ad network or third party.
 
   Earlier versions also pinged an anonymous install counter (`counterapi.dev`). It was removed in v1.1.2 — the provider retired its v1 API and every request returned `410 Gone`, so it was never actually counting anything.
@@ -126,7 +128,9 @@ Both are intentionally inconvenient — that's the point. If you really need mor
 
 The 30-second wait is **not an advertisement and contains no ad SDK**. It is a plain timer dialog that shows a link to [yourwatch.no](https://yourwatch.no), where we sell custom watches. It makes no network requests. If you tap the link, your browser opens our site — that is the only thing it does.
 
-Bonus time is **not drawn down as you use it** — it raises your limit for the day and stays raised. That makes the reward per wait a multiplier on 30 seconds of waiting, so it is capped at **20 minutes**. If you want a tighter budget than that, set it lower; the ceiling only stops the setting from being absurd.
+Bonus time is **not drawn down as you use it** — it raises your limit for the day and stays raised. That makes the reward per wait a multiplier on 30 seconds of waiting, so it is capped at **20 minutes**, in whole-minute steps. If you want a tighter budget than that, set it lower; the ceiling only stops the setting from being absurd.
+
+Bonus expires on its own at your reset hour, whether or not you open the app — the day is part of the stored key, so the native limiter cannot see yesterday's balance even if Unplug has not run since.
 
 ### Settings That Can't Be Undone on Impulse
 - Editing limits, groups, or tab blockers requires completing the same wait-or-type challenge

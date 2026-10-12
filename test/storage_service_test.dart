@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:unplug/services/storage_service.dart';
@@ -65,7 +67,15 @@ void main() {
       expect(options.first, 0);
       expect(options.last, 1200);
       expect(options.every((s) => s <= 1200), isTrue);
-      expect(options.length, 41, reason: '0s to 20m in 30s steps');
+      expect(options.length, 21, reason: '0m to 20m in whole-minute steps');
+    });
+
+    // Whole minutes only. Sub-minute granularity was noise on a value that
+    // raises a daily budget.
+    test('every option is a whole minute', () {
+      for (final s in StorageService.bonusRewardOptions()) {
+        expect(s % 60, 0, reason: '$s is not a whole number of minutes');
+      }
     });
 
     test('every option is itself saveable and readable unchanged', () async {
@@ -124,10 +134,21 @@ void main() {
   });
 
   group('bonus seconds day rollover', () {
-    // The native service reads bonus_seconds_* directly out of
-    // SharedPreferences and never runs Dart. The reset therefore cannot live
-    // only in init() — a user who does not open Unplug for a day would keep
-    // yesterday's bonus silently raising today's limit.
+    // The native AccessibilityService reads this key straight out of
+    // SharedPreferences and never runs Dart. Clearing the key from Dart —
+    // at launch, or on a read — is not enough: a user who does not open Unplug
+    // across the reset hour keeps yesterday's bonus in force for the native
+    // limiter, while the dashboard shows zero. So the day is part of the key
+    // and a stale balance simply does not exist for either reader.
+    //
+    // The format is a cross-language contract; UsageAccessibilityService
+    // .bonusSecondsFor builds the same string. The key test pins it exactly,
+    // because a change here that is not matched there means earned bonus
+    // silently stops being honoured, or stops expiring.
+
+    String today() => StorageService().dayKey(DateTime.now());
+    String yesterday() => StorageService()
+        .dayKey(DateTime.now().subtract(const Duration(days: 1)));
 
     test('accumulates within the same day', () async {
       await StorageService().addBonusSeconds('Social Media', 60);
@@ -140,35 +161,78 @@ void main() {
       expect(StorageService().getBonusSeconds('Games'), 0);
     });
 
-    test('reads zero when the stored day marker is stale', () async {
+    test('the key is scoped to the current day', () async {
       await StorageService().addBonusSeconds('Social Media', 120);
-      expect(StorageService().getBonusSeconds('Social Media'), 120);
 
-      // Simulate the app not being launched across a day boundary. The
-      // marker still names the old day, so the read must refuse to return
-      // the stale value rather than hand it to the dashboard.
-      final stale = DateTime.now().subtract(const Duration(days: 2));
-      SharedPreferences.setMockInitialValues({'last_bonus_reset': _keyFor(stale)});
-      await StorageService().init();
+      final keys = (await SharedPreferences.getInstance()).getKeys();
+      expect(keys, contains('bonus_seconds_Social Media_${today()}'));
+    });
+
+    // The bug this replaced: an unscoped key was still present after the day
+    // rolled over and was still being read by the native limiter.
+    test("yesterday's balance is not counted today", () async {
       SharedPreferences.setMockInitialValues({
-        'last_bonus_reset': _keyFor(stale),
-        'bonus_seconds_Social Media': 120,
+        'bonus_seconds_Social Media_${yesterday()}': 300,
       });
       await StorageService().init();
 
       expect(StorageService().getBonusSeconds('Social Media'), 0);
     });
 
-    test('adding after a rollover starts from zero, not the stale total', () async {
-      final stale = DateTime.now().subtract(const Duration(days: 2));
+    test('adding today does not inherit yesterday\'s total', () async {
       SharedPreferences.setMockInitialValues({
-        'last_bonus_reset': _keyFor(stale),
-        'bonus_seconds_Social Media': 120,
+        'bonus_seconds_Social Media_${yesterday()}': 300,
       });
       await StorageService().init();
 
       await StorageService().addBonusSeconds('Social Media', 60);
       expect(StorageService().getBonusSeconds('Social Media'), 60);
+    });
+
+    // Installs from before this change carry the old unscoped key. It must not
+    // be picked up, and must be cleaned up rather than left to accumulate.
+    test('an old unscoped key is ignored and swept away', () async {
+      SharedPreferences.setMockInitialValues({
+        'bonus_seconds_Social Media': 300,
+      });
+      await StorageService().init();
+
+      expect(StorageService().getBonusSeconds('Social Media'), 0);
+
+      await StorageService().addBonusSeconds('Social Media', 60);
+      final keys = (await SharedPreferences.getInstance()).getKeys();
+      expect(keys, isNot(contains('bonus_seconds_Social Media')));
+      expect(StorageService().getBonusSeconds('Social Media'), 60);
+    });
+
+    test('removing bonus clears today only', () async {
+      SharedPreferences.setMockInitialValues({
+        'bonus_seconds_Social Media_${yesterday()}': 300,
+      });
+      await StorageService().init();
+      await StorageService().addBonusSeconds('Social Media', 120);
+
+      await StorageService().resetBonusSeconds('Social Media');
+      expect(StorageService().getBonusSeconds('Social Media'), 0);
+    });
+
+    // Dart and Kotlin each build this key independently, and nothing in the
+    // build would catch them disagreeing — the native service would simply
+    // stop finding bonus the user paid for, with no error anywhere. There is
+    // no Kotlin test harness here, so assert the two source files agree.
+    // Drop this the day the service gets real unit tests.
+    test('the Kotlin side builds the same key', () {
+      final source = File(
+        'android/app/src/main/kotlin/com/egbytest/unplug/UsageAccessibilityService.kt',
+      ).readAsStringSync();
+
+      expect(
+        source,
+        contains(r'"flutter.bonus_seconds_%s_%04d-%02d-%02d"'),
+        reason: 'UsageAccessibilityService must build the day-scoped key that '
+            'StorageService._bonusKey writes, or earned bonus is silently '
+            'ignored by the limiter',
+      );
     });
   });
 
@@ -197,10 +261,6 @@ void main() {
     });
   });
 }
-
-// Mirrors StorageService.dayKey for the default reset hour, which the tests
-// above leave at 2am.
-String _keyFor(DateTime dt) => dt.toIso8601String().substring(0, 10);
 
 /// "N days ago", as a dayKey. Takes a positive count.
 String _daysAgo(int days) =>
