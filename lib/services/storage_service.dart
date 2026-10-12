@@ -58,10 +58,42 @@ class StorageService {
   // 60s default. Dart is the only reader, so there is no cross-language
   // contract here to keep in sync — just the stored value.
 
-  int get bonusRewardSeconds => _prefs?.getInt('ad_reward_seconds') ?? 60;
+  /// Ceiling on a single reward action.
+  ///
+  /// Bonus time is not drawn down as it is spent — it raises the day's limit
+  /// and stays raised. So the reward per action is effectively a multiplier on
+  /// 30 seconds of waiting, and an uncapped picker let one wait be worth any
+  /// amount of screen time at all.
+  static const int maxBonusRewardSeconds = 20 * 60;
+
+  static const int defaultBonusRewardSeconds = 60;
+
+  /// Step between selectable reward values.
+  static const int bonusRewardStepSeconds = 30;
+
+  /// Every selectable reward value, from zero up to and including the cap.
+  ///
+  /// The settings screen builds its picker from this rather than using
+  /// CupertinoTimerPicker, which has no min/max and will happily scroll past
+  /// any bound and silently clamp on save. An explicit list cannot be
+  /// scrolled past, so the ceiling the user sees is the ceiling enforced.
+  static List<int> bonusRewardOptions() => [
+        for (int s = 0; s <= maxBonusRewardSeconds; s += bonusRewardStepSeconds)
+          s,
+      ];
+
+  /// Clamped on read as well as on write. Installs that already stored a
+  /// larger value are corrected the moment they launch, without a migration.
+  int get bonusRewardSeconds {
+    final stored = _prefs?.getInt('ad_reward_seconds') ?? defaultBonusRewardSeconds;
+    return stored.clamp(0, maxBonusRewardSeconds);
+  }
 
   Future<void> saveBonusRewardSeconds(int seconds) async {
-    await _prefs?.setInt('ad_reward_seconds', seconds);
+    await _prefs?.setInt(
+      'ad_reward_seconds',
+      seconds.clamp(0, maxBonusRewardSeconds),
+    );
   }
 
   Future<void> resetBonusSeconds(String groupName) async {

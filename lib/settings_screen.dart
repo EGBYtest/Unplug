@@ -226,11 +226,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  // ─── Edit Ad Ratio ─────────────────────────────────────────────────────────
+  // ─── Edit Reward ───────────────────────────────────────────────────────────
 
   void _editAdRatio() {
-    int tempSeconds = _bonusRewardSeconds % 60;
-    int tempMinutes = _bonusRewardSeconds ~/ 60;
+    final options = StorageService.bonusRewardOptions();
+    var selectedIndex = options.indexOf(_bonusRewardSeconds);
+    if (selectedIndex < 0) {
+      selectedIndex = options.indexOf(StorageService.defaultBonusRewardSeconds);
+      if (selectedIndex < 0) selectedIndex = 0;
+    }
 
     showCupertinoModalPopup(
       context: context,
@@ -243,7 +247,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         child: Column(
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+              padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -257,8 +261,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     padding: EdgeInsets.zero,
                     child: const Text('Save', style: TextStyle(color: Color(0xFF0A84FF), fontWeight: FontWeight.bold)),
                     onPressed: () async {
-                      setState(() => _bonusRewardSeconds = tempMinutes * 60 + tempSeconds);
-                      await _storage.saveBonusRewardSeconds(_bonusRewardSeconds);
+                      final value = options[selectedIndex];
+                      setState(() => _bonusRewardSeconds = value);
+                      await _storage.saveBonusRewardSeconds(value);
                       if (mounted) Navigator.pop(context);
                     },
                   ),
@@ -266,16 +271,34 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
             const Divider(color: Colors.white12, height: 1),
-            const SizedBox(height: 4),
-            const Text('Time Granted', style: TextStyle(color: Colors.white54, fontSize: 13)),
+            const Text('Time granted per wait', style: TextStyle(color: Colors.white54, fontSize: 13)),
+            // The last entry is the ceiling, not a scroll target: bonus time
+            // is never drawn back down, so this value permanently raises the
+            // day's limit by that much for everyone who completes a wait.
+            const Padding(
+              padding: EdgeInsets.only(bottom: 4),
+              child: Text(
+                'Maximum 20m',
+                style: TextStyle(color: Colors.white38, fontSize: 12),
+              ),
+            ),
             Expanded(
-              child: CupertinoTimerPicker(
-                mode: CupertinoTimerPickerMode.ms,
-                initialTimerDuration: Duration(seconds: _bonusRewardSeconds),
-                onTimerDurationChanged: (d) {
-                  tempMinutes = d.inMinutes;
-                  tempSeconds = d.inSeconds % 60;
-                },
+              // Bounded list from StorageService.bonusRewardOptions(), so it
+              // cannot be scrolled past the cap.
+              child: CupertinoPicker(
+                itemExtent: 40,
+                scrollController:
+                    FixedExtentScrollController(initialItem: selectedIndex),
+                onSelectedItemChanged: (i) => selectedIndex = i,
+                children: options
+                    .map((s) => Center(
+                          child: Text(
+                            _formatSeconds(s),
+                            style: const TextStyle(
+                                color: Colors.white, fontSize: 20),
+                          ),
+                        ))
+                    .toList(),
               ),
             ),
           ],

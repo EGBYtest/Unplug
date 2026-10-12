@@ -119,12 +119,14 @@ Smart detection exits only the blocked tab. The app stays open.
 ### Earn More Time — Mindfully
 | Method | Bonus | The Catch |
 |--------|-------|------------|
-| Wait 30 seconds | +1 min (configurable) | The timer resets if you leave the app or shrink the window, so it cannot run in the background |
+| Wait 30 seconds | +1 min (configurable, up to 20 min) | The timer resets if you leave the app or shrink the window, so it cannot run in the background |
 | Type a 50-word challenge | +1 min | Exact match required. No copy-paste. |
 
 Both are intentionally inconvenient — that's the point. If you really need more time, you'll do it. If not, you'll put the phone down.
 
 The 30-second wait is **not an advertisement and contains no ad SDK**. It is a plain timer dialog that shows a link to [yourwatch.no](https://yourwatch.no), where we sell custom watches. It makes no network requests. If you tap the link, your browser opens our site — that is the only thing it does.
+
+Bonus time is **not drawn down as you use it** — it raises your limit for the day and stays raised. That makes the reward per wait a multiplier on 30 seconds of waiting, so it is capped at **20 minutes**. If you want a tighter budget than that, set it lower; the ceiling only stops the setting from being absurd.
 
 ### Settings That Can't Be Undone on Impulse
 - Editing limits, groups, or tab blockers requires completing the same wait-or-type challenge

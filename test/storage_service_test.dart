@@ -25,6 +25,56 @@ void main() {
       expect(StorageService().bonusRewardSeconds, 60);
     });
 
+    // Bonus time is never drawn down as it is spent — it raises the day's
+    // limit and stays raised. So the reward per action is a multiplier on 30
+    // seconds of waiting, and it has to have a ceiling or one wait can be
+    // worth any amount of screen time.
+    test('bonus reward is capped at 20 minutes', () async {
+      expect(StorageService.maxBonusRewardSeconds, 1200);
+
+      await StorageService().saveBonusRewardSeconds(99999);
+      expect(StorageService().bonusRewardSeconds, 1200);
+    });
+
+    test('saving exactly the cap is allowed', () async {
+      await StorageService().saveBonusRewardSeconds(1200);
+      expect(StorageService().bonusRewardSeconds, 1200);
+    });
+
+    // Anything already stored above the cap by a previous build has to be
+    // corrected on read, not only on the next save — otherwise users who set
+    // it before this landed keep the old value until they next open Settings.
+    test('an oversized value stored by an older build is corrected on read',
+        () async {
+      SharedPreferences.setMockInitialValues({'ad_reward_seconds': 86400});
+      await StorageService().init();
+      expect(StorageService().bonusRewardSeconds, 1200);
+    });
+
+    test('a negative value cannot be saved', () async {
+      await StorageService().saveBonusRewardSeconds(-500);
+      expect(StorageService().bonusRewardSeconds, 0);
+    });
+
+    // The old picker was a CupertinoTimerPicker, which has no min/max: it
+    // scrolled freely and clamped on save, so the user could select a value
+    // the app would then silently refuse. The replacement is an explicit
+    // list, which cannot be scrolled past.
+    test('the selectable options stop exactly at the cap', () {
+      final options = StorageService.bonusRewardOptions();
+      expect(options.first, 0);
+      expect(options.last, 1200);
+      expect(options.every((s) => s <= 1200), isTrue);
+      expect(options.length, 41, reason: '0s to 20m in 30s steps');
+    });
+
+    test('every option is itself saveable and readable unchanged', () async {
+      for (final s in StorageService.bonusRewardOptions()) {
+        await StorageService().saveBonusRewardSeconds(s);
+        expect(StorageService().bonusRewardSeconds, s);
+      }
+    });
+
     test('onboarding starts incomplete', () {
       expect(StorageService().onboardingComplete, isFalse);
     });
