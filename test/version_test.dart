@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:unplug/generated/app_version.dart';
 import 'package:unplug/services/update_checker.dart';
@@ -8,6 +11,53 @@ void main() {
       expect(AppVersion.name, matches(RegExp(r'^\d+\.\d+\.\d+$')));
       expect(AppVersion.buildNumber, greaterThan(0));
       expect(AppVersion.full, '${AppVersion.name}+${AppVersion.buildNumber}');
+    });
+  });
+
+  group('update sources', () {
+    // These are the only two update sources left. If either breaks the app
+    // silently stops offering updates, so pin them here. Separate client per
+    // request because closing one HttpClient invalidates in-flight ones.
+    Future<({int status, String body})> fetch(String url) async {
+      final client = HttpClient();
+      client.connectionTimeout = const Duration(seconds: 10);
+      final res = await client.getUrl(Uri.parse(url)).then((r) => r.close());
+      final body = await res.transform(utf8.decoder).join();
+      client.close();
+      return (status: res.statusCode, body: body);
+    }
+
+    test('both sources are reachable and report a parseable version', () async {
+      final api = await fetch(
+        'https://api.github.com/repos/EGBYtest/Unplug/releases/latest',
+      );
+      expect(api.status, 200, reason: 'GitHub Releases API unreachable');
+      final tag =
+          (jsonDecode(api.body) as Map<String, dynamic>)['tag_name'];
+      expect(tag, matches(RegExp(r'^v?\d+\.\d+\.\d+')),
+          reason: 'tag_name is not a version string');
+
+      final raw = await fetch(
+        'https://raw.githubusercontent.com/EGBYtest/Unplug/main/VERSION',
+      );
+      expect(raw.status, 200, reason: 'raw VERSION file unreachable');
+      expect(raw.body.trim(), matches(RegExp(r'^\d+\.\d+\.\d+$')),
+          reason: 'VERSION file is not a bare version string');
+    });
+
+    test('the VERSION file matches the latest release tag', () async {
+      final raw = await fetch(
+        'https://raw.githubusercontent.com/EGBYtest/Unplug/main/VERSION',
+      );
+      final api = await fetch(
+        'https://api.github.com/repos/EGBYtest/Unplug/releases/latest',
+      );
+      final tag = (jsonDecode(api.body) as Map<String, dynamic>)['tag_name']
+          as String;
+
+      expect(raw.body.trim(), tag.replaceFirst('v', ''),
+          reason: 'VERSION and the release tag disagree; the raw fallback '
+              'would report a version the API does not');
     });
   });
 

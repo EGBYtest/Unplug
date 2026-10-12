@@ -26,9 +26,8 @@ void main() {
       expect(StorageService().adRewardSeconds, 60);
     });
 
-    test('onboarding and install reporting start incomplete', () {
+    test('onboarding starts incomplete', () {
       expect(StorageService().onboardingComplete, isFalse);
-      expect(StorageService().installReported, isFalse);
     });
   });
 

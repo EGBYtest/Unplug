@@ -80,9 +80,10 @@ When you install and set up Unplug, you will very likely see one or more of the 
   - App groups, time limits, usage history, and bonus time are stored in **SharedPreferences on your device only**.
   - The native Kotlin service reads those same on-device preferences directly. **No network calls happen during enforcement.**
 - **The only network requests the app ever makes:**
-  1. An anonymous install counter (`counterapi.dev`) that fires **once** on first launch, with no identifying information. The version string is sent as a `ref` query parameter purely to tag the count with the build it came from.
-  2. Rewarded video ads (Google Mobile Ads SDK) when **you choose** to watch an ad to earn bonus time.
-  3. Update checks against the GitHub Releases API so the app can tell you when a new version exists.
+  1. Rewarded video ads (Google Mobile Ads SDK) when **you choose** to watch an ad to earn bonus time.
+  2. Update checks against the public GitHub Releases API, so the app can tell you when a new version exists.
+
+  Earlier versions also pinged an anonymous install counter (`counterapi.dev`). It was removed in v1.1.2 — the provider retired its v1 API and every request returned `410 Gone`, so it was never actually counting anything.
 - If you do not believe these claims, the source is right here — search for `http`, `HttpClient`, and `WebView` yourself and see exactly where every request goes.
 
 ---
@@ -247,7 +248,7 @@ Unplug/
 ### Verify a release
 1. Check the release tag (`v1.1.0`) and the published `VERSION` file match.
 2. Optionally rebuild the APK from the tagged source yourself (`flutter build apk --release`) and compare behavior/checksum expectations.
-3. Audit network usage: search the codebase for `HttpClient`, `http`, `WebView`, and `counterapi` — every outbound request is in `lib/main.dart` (install counter), `lib/services/update_checker.dart` (update check), and the ads SDK (rewarded ads only).
+3. Audit network usage: search the codebase for `HttpClient`, `http`, `WebView`, and `counterapi` — every outbound request is in `lib/services/update_checker.dart` (update check) and the ads SDK (rewarded ads only).
 
 ### Build notes
 - The app version lives in **one** place: the `version:` line in `pubspec.yaml`. `lib/generated/app_version.dart` is generated from it by `tool/gen_version.sh` — never edit that file by hand. Regenerate with `./tool/gen_version.sh` after changing the version.
@@ -262,8 +263,7 @@ Releases before v1.0.0 exist twice under two tag series on the same commits: a `
 
 - No analytics. No tracking. No accounts.
 - All data (groups, limits, usage history) stored locally in SharedPreferences — on your phone, nowhere else.
-- The install counter (counterapi.dev) fires **once** on first launch with no identifying information.
-- Update checks query the public GitHub Releases API.
+- Update checks query the public GitHub Releases API. Nothing else is contacted except the ads SDK, and only when you choose to watch an ad.
 - Rewarded ads (Google Mobile Ads SDK) load only when you choose to watch an ad.
 - Source code is fully open — verify every claim yourself.
 

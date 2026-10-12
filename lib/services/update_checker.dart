@@ -19,12 +19,10 @@ class UpdateInfo {
 class UpdateChecker {
   static const _githubApi = 'https://api.github.com/repos/EGBYtest/Unplug/releases/latest';
   static const _githubFallback = 'https://raw.githubusercontent.com/EGBYtest/Unplug/main/VERSION';
-  static const _counterApi = 'https://api.counterapi.dev/v1/unplug/version_build/';
 
   /// Version of the running build. Generated from pubspec.yaml — see
   /// tool/gen_version.sh. Do not hardcode a version string here.
   static const _currentVersion = AppVersion.name;
-  static const _currentBuild = AppVersion.buildNumber;
 
   static const String _userAgent = 'Unplug/${AppVersion.full}';
 
@@ -41,10 +39,6 @@ class UpdateChecker {
     log('UpdateChecker: github API failed, trying raw fallback...');
     final fallback = await _tryFetch(_githubFallback, _parseVersionFile);
     if (fallback != null) return fallback;
-
-    log('UpdateChecker: raw fallback failed, trying counter fallback...');
-    final counter = await _tryFetchCounter();
-    if (counter != null) return counter;
 
     return _noUpdate();
   }
@@ -92,46 +86,6 @@ class UpdateChecker {
       return null;
     } catch (e) {
       log('UpdateChecker: $url error $e');
-      return null;
-    }
-  }
-
-  static Future<UpdateInfo?> _tryFetchCounter() async {
-    try {
-      final client = HttpClient();
-      client.connectionTimeout = const Duration(seconds: 5);
-      client.userAgent = _userAgent;
-
-      final request = await client.getUrl(Uri.parse(_counterApi));
-      final response = await request.close();
-
-      log('UpdateChecker: HTTP ${response.statusCode} from $_counterApi');
-
-      if (response.statusCode != 200) {
-        client.close();
-        return null;
-      }
-
-      final body = await response.transform(utf8.decoder).join();
-      client.close();
-
-      final data = jsonDecode(body) as Map<String, dynamic>;
-      final latestBuild = data['count'] as int? ?? 0;
-
-      log('UpdateChecker: counter latestBuild=$latestBuild current=$_currentBuild');
-
-      if (latestBuild > _currentBuild) {
-        log('UpdateChecker: update available (build $latestBuild)');
-        return UpdateInfo(
-          latestVersion: '$latestBuild',
-          downloadUrl: 'https://github.com/EGBYtest/Unplug/releases/latest',
-          isAvailable: true,
-        );
-      }
-
-      return null;
-    } catch (e) {
-      log('UpdateChecker: $_counterApi error $e');
       return null;
     }
   }

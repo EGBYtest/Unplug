@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -7,42 +6,17 @@ import 'onboarding_screen.dart';
 import 'services/storage_service.dart';
 import 'services/app_closure_handler.dart';
 import 'services/update_checker.dart';
-import 'generated/app_version.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   await StorageService().init();
-  await _trackInstall();
   UpdateChecker.initCheck();
 
   runApp(const UnplugApp());
 }
 
-Future<void> _trackInstall() async {
-  final storage = StorageService();
-  if (storage.installReported) return;
 
-  try {
-    final client = HttpClient();
-    client.connectionTimeout = const Duration(seconds: 5);
-
-    // Single anonymous counter, tagged with the build it came from so the
-    // per-build number can still be derived server-side if needed.
-    final request = await client.getUrl(
-      Uri.parse(
-        'https://api.counterapi.dev/v1/unplug/installs/up'
-        '?ref=${AppVersion.full}',
-      ),
-    );
-    await request.close();
-
-    await storage.setInstallReported();
-    client.close();
-  } catch (_) {
-    // Silently fail — install tracking is non-critical
-  }
-}
 
 class UnplugApp extends StatefulWidget {
   const UnplugApp({Key? key}) : super(key: key);
