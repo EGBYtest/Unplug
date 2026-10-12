@@ -28,7 +28,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Timer? _updateCheckTimer;
   late List<AppGroup> _groups;
   UpdateInfo? _updateInfo;
-  bool _updateDismissed = false;
+  String? _dismissedVersion;
 
   @override
   void initState() {
@@ -40,21 +40,30 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.addPostFrameCallback((_) => _checkPermissionsOnStart());
     _checkUpdate();
     _updateCheckTimer = Timer.periodic(const Duration(minutes: 10), (_) {
-      UpdateChecker.cachedUpdate = null;
       _checkUpdate();
     });
   }
 
   Future<void> _checkUpdate() async {
-    var cached = UpdateChecker.cachedUpdate;
-    final UpdateInfo info = cached ?? await UpdateChecker.check();
+    // Always a fresh fetch. This used to read a static cache that main() had
+    // started populating without awaiting, so the first screen render raced
+    // an in-flight request and would latch onto its result. A single failed
+    // check at startup cached a negative answer that then suppressed the
+    // banner for the whole session.
+    final UpdateInfo info = await UpdateChecker.check();
     if (!mounted) return;
     setState(() {
       if (info.isAvailable) {
         _updateInfo = info;
+        // A newer release than the one they dismissed is a new thing to
+        // acknowledge, so the banner comes back.
+        if (_dismissedVersion != null &&
+            _dismissedVersion != info.latestVersion) {
+          _dismissedVersion = null;
+        }
       } else {
         _updateInfo = null;
-        _updateDismissed = false;
+        _dismissedVersion = null;
       }
     });
   }
@@ -113,7 +122,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _loadUsage();
-      UpdateChecker.cachedUpdate = null;
       _checkUpdate();
     }
   }
@@ -190,7 +198,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             sliver: SliverList(
               delegate: SliverChildListDelegate([
                 const SizedBox(height: 24),
-                if (_updateInfo != null && !_updateDismissed) _buildUpdateBanner(),
+                if (UpdateChecker.shouldShowBanner(_updateInfo, _dismissedVersion))
+                  _buildUpdateBanner(),
                 _buildRing(),
                 const SizedBox(height: 16),
                 _buildStatCards(),
@@ -451,7 +460,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 ),
               ),
               GestureDetector(
-                onTap: () => setState(() => _updateDismissed = true),
+                onTap: () =>
+                    setState(() => _dismissedVersion = _updateInfo!.latestVersion),
                 child: Container(
                   padding: const EdgeInsets.all(6),
                   child: const Icon(CupertinoIcons.clear_circled, color: Colors.white38, size: 18),

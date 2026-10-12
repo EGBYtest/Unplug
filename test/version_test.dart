@@ -106,4 +106,84 @@ void main() {
       expect(compare('1.0.0', '1.8.7'), lessThan(0));
     });
   });
+
+  group('update banner visibility', () {
+    // The banner is the only download affordance since v1.1.1, so a check
+    // that fails to surface an available release leaves the user with no way
+    // to see there is an update at all.
+    const show = UpdateChecker.shouldShowBanner;
+
+    UpdateInfo avail(String v) => UpdateInfo(
+          latestVersion: v,
+          downloadUrl: 'https://github.com/EGBYtest/Unplug/releases/tag/v$v',
+          isAvailable: true,
+        );
+    const none = UpdateInfo(
+      latestVersion: '',
+      downloadUrl: '',
+      isAvailable: false,
+    );
+
+    test('shows when an update exists and nothing was dismissed', () {
+      expect(show(avail('1.1.3'), null), isTrue);
+    });
+
+    test('hidden when there is no update', () {
+      expect(show(none, null), isFalse);
+      expect(show(null, null), isFalse);
+    });
+
+    test('stays hidden for the version that was dismissed', () {
+      expect(show(avail('1.1.3'), '1.1.3'), isFalse);
+    });
+
+    // Dismissing "1.1.3" acknowledges that release, not every future one.
+    // A single boolean used to hide the banner for the rest of the session,
+    // so a genuinely newer release was never announced.
+    test('returns when a newer version appears than the one dismissed', () {
+      expect(show(avail('1.1.4'), '1.1.3'), isTrue);
+    });
+
+    test('a dismissed version does not suppress a later re-check of itself', () {
+      expect(show(avail('1.1.3'), '1.1.3'), isFalse);
+      expect(show(avail('1.1.3'), '1.1.3'), isFalse);
+    });
+  });
+
+  group('release payload parsing', () {
+    // Every check is independent and returns its own answer. This used to
+    // write into a static cache that main() populated without awaiting, so
+    // one failed check at startup cached "no update" and the banner stayed
+    // hidden for the whole session. Returning null here is the only thing a
+    // non-newer release may do — there is nowhere for it to persist.
+    String payload(String tag) => jsonEncode({'tag_name': tag});
+    final parse = UpdateChecker.fromReleasePayload;
+
+    test('a newer release yields an available update', () {
+      final info = parse(payload('v1.2.0'), '1.1.3');
+      expect(info, isNotNull);
+      expect(info!.isAvailable, isTrue);
+      expect(info.latestVersion, '1.2.0');
+      expect(info.downloadUrl, contains('v1.2.0'));
+    });
+
+    test('the current release is not an update', () {
+      expect(parse(payload('v1.1.3'), '1.1.3'), isNull);
+    });
+
+    test('an older release is not an update', () {
+      expect(parse(payload('v1.0.0'), '1.1.3'), isNull);
+    });
+
+    test('a malformed payload is not an update', () {
+      expect(parse('{}', '1.1.3'), isNull);
+      expect(parse('not json', '1.1.3'), isNull);
+    });
+
+    // The abandoned 1.8.x line: numerically newer, so it would be offered.
+    // Documented rather than asserted as correct.
+    test('the 1.8.x line still outranks 1.1.x numerically', () {
+      expect(UpdateChecker.compareVersions('1.8.7', '1.1.3'), greaterThan(0));
+    });
+  });
 }

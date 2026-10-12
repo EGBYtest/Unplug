@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:developer' show log;
 import 'dart:io';
 
+import 'package:meta/meta.dart';
+
 import '../generated/app_version.dart';
 
 class UpdateInfo {
@@ -25,12 +27,6 @@ class UpdateChecker {
   static const _currentVersion = AppVersion.name;
 
   static const String _userAgent = 'Unplug/${AppVersion.full}';
-
-  static UpdateInfo? cachedUpdate;
-
-  static Future<void> initCheck() async {
-    cachedUpdate = await check();
-  }
 
   static Future<UpdateInfo> check() async {
     final result = await _tryFetch(_githubApi, _parseReleaseJson);
@@ -91,9 +87,18 @@ class UpdateChecker {
   }
 
   static String? _parseReleaseJson(String body) {
-    final data = jsonDecode(body) as Map<String, dynamic>;
-    final tagName = data['tag_name'] as String? ?? '';
-    return tagName.replaceFirst('v', '');
+    // Tolerates anything that is not the expected shape. A truncated body or
+    // an unexpected schema must degrade to "no update from this source" so
+    // the fallback still gets its turn, not throw past the caller.
+    try {
+      final decoded = jsonDecode(body);
+      if (decoded is! Map) return null;
+      final tagName = decoded['tag_name'];
+      if (tagName is! String || tagName.isEmpty) return null;
+      return tagName.replaceFirst(RegExp('^v'), '');
+    } catch (_) {
+      return null;
+    }
   }
 
   static String? _parseVersionFile(String body) {
@@ -105,6 +110,34 @@ class UpdateChecker {
     downloadUrl: '',
     isAvailable: false,
   );
+
+  /// Whether the update banner should be visible.
+  ///
+  /// Dismissal is remembered per version rather than as a bare flag. A user
+  /// who dismisses "v1.1.3 is available" has acknowledged that release; they
+  /// have not acknowledged a later one. With a single boolean the banner stayed
+  /// hidden for the rest of the session even when a newer release appeared,
+  /// which is the same "never clears" bug the banner had before.
+  static bool shouldShowBanner(UpdateInfo? info, String? dismissedVersion) {
+    if (info == null || !info.isAvailable) return false;
+    return info.latestVersion != dismissedVersion;
+  }
+
+  /// Parses the GitHub Releases payload. Separate from [_tryFetch] so the
+  /// decision about whether a release counts as newer can be tested against
+  /// real payloads without a network round trip.
+  @visibleForTesting
+  static UpdateInfo? fromReleasePayload(String body, String currentVersion) {
+    final latestVersion = _parseReleaseJson(body);
+    if (latestVersion == null || latestVersion.isEmpty) return null;
+    return latestVersion == currentVersion || compareVersions(latestVersion, currentVersion) <= 0
+        ? null
+        : UpdateInfo(
+            latestVersion: latestVersion,
+            downloadUrl: 'https://github.com/EGBYtest/Unplug/releases/tag/v$latestVersion',
+            isAvailable: true,
+          );
+  }
 
   /// Compares two dotted version strings numerically, returning a negative
   /// value if [a] is older, zero if equal, positive if [a] is newer.

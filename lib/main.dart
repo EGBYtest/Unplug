@@ -5,13 +5,11 @@ import 'home_screen.dart';
 import 'onboarding_screen.dart';
 import 'services/storage_service.dart';
 import 'services/app_closure_handler.dart';
-import 'services/update_checker.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   await StorageService().init();
-  UpdateChecker.initCheck();
 
   runApp(const UnplugApp());
 }
