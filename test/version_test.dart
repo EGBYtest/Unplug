@@ -45,15 +45,31 @@ void main() {
           reason: 'VERSION file is not a bare version string');
     });
 
-    test('the VERSION file matches the latest release tag', () async {
-      final raw = await fetch(
-        'https://raw.githubusercontent.com/EGBYtest/Unplug/main/VERSION',
-      );
+    // Checks the VERSION file at the release TAG, not at main.
+    //
+    // raw.githubusercontent.com serves `vary: Authorization, Accept-Encoding`,
+    // so the identity and gzip responses are separate Fastly cache objects.
+    // HttpClient — which both this test and UpdateChecker use — requests
+    // gzip, and for a few minutes after a release that gzip object keeps
+    // serving the previous version while the identity object is already
+    // fresh. Asserting equality against `main` therefore raced the CDN and
+    // failed on release days; a tag is immutable, so this checks the real
+    // invariant — the tagged source matches the release — with no race.
+    //
+    // The consequence for the app is recorded in the test above: the raw
+    // fallback can briefly disagree with the API, so the API stays primary.
+    test('the VERSION file at the release tag matches the release tag',
+        () async {
       final api = await fetch(
         'https://api.github.com/repos/EGBYtest/Unplug/releases/latest',
       );
       final tag = (jsonDecode(api.body) as Map<String, dynamic>)['tag_name']
           as String;
+
+      final raw = await fetch(
+        'https://raw.githubusercontent.com/EGBYtest/Unplug/$tag/VERSION',
+      );
+      expect(raw.status, 200, reason: 'tagged VERSION file unreachable');
 
       expect(raw.body.trim(), tag.replaceFirst('v', ''),
           reason: 'VERSION and the release tag disagree; the raw fallback '
