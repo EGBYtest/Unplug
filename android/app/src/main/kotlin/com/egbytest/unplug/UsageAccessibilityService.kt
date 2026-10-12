@@ -161,16 +161,15 @@ class UsageAccessibilityService : AccessibilityService() {
             }
 
             // Check time limit
-            val bonus = bonusSecondsFor(groupName, prefs)
-            val totalLimit = limit + (bonus / 60)
+            val usedMinutes = groupUsageMinutes(groupName, prefs)
+            val totalLimit = effectiveLimitMinutes(groupName, limit, usedMinutes, prefs)
             if (totalLimit == 0) { blockApp(pkg, groupName); return }
 
-            val usedMinutes = groupUsageMinutes(groupName, prefs)
             if (usedMinutes >= totalLimit) {
                 Log.i(TAG, "block $pkg ($groupName): ${usedMinutes}m >= ${totalLimit}m")
                 blockApp(pkg, groupName)
             } else {
-                Log.i(TAG, "ok $pkg ($groupName): ${usedMinutes}m / ${totalLimit}m (bonus=${bonus}s, resetHour=${prefs.getFlutterInt("flutter.reset_hour", 2)})")
+                Log.i(TAG, "ok $pkg ($groupName): ${usedMinutes}m / ${totalLimit}m (bonus=${bonusSecondsFor(groupName, prefs)}s, resetHour=${prefs.getFlutterInt("flutter.reset_hour", 2)})")
             }
             return
         }
@@ -180,6 +179,7 @@ class UsageAccessibilityService : AccessibilityService() {
     //
     // The bonus key is scoped to the day it was earned on:
     //   flutter.bonus_seconds_<group>_<YYYY-MM-DD>
+    //   flutter.bonus_anchor_<group>_<YYYY-MM-DD>
     //
     // This service reads SharedPreferences directly and never runs Dart. An
     // unscoped key was only ever cleared by Dart running — at app launch or on
@@ -188,18 +188,75 @@ class UsageAccessibilityService : AccessibilityService() {
     // check) showed zero. Day-scoping the key makes a stale balance simply
     // not exist for either reader, with no dependence on the app running.
     //
-    // The key format is a cross-language contract; StorageService._bonusKey
-    // builds the same string. Keep the two in step.
+    // The anchor is the usage reading at grant time. Credit granted is
+    // anchored to it, and usage since then is subtracted to find what is
+    // left. Storing the anchor rather than decrementing a stored balance is
+    // deliberate: consumption stays a pure read, so the balance is correct
+    // even for a user who never opens the app between two enforcement checks.
+    //
+    // The key formats are cross-language contracts; StorageService._bonusKey
+    // and StorageService._bonusAnchorKey build the same strings. Keep in step.
     private fun bonusSecondsFor(groupName: String, prefs: SharedPreferences): Int {
+        return prefs.getFlutterInt(bonusKey(groupName, dayStart(prefs)), 0)
+    }
+
+    /** Usage reading captured when credit was granted, or null if there is none. */
+    private fun bonusAnchorOrNull(groupName: String, prefs: SharedPreferences): Int? {
         val day = dayStart(prefs)
-        val key = String.format(
+        val key = bonusAnchorKey(groupName, day)
+        if (!prefs.contains(key)) return null
+        return prefs.getFlutterInt(key, 0)
+    }
+
+    private fun bonusKey(groupName: String, day: Calendar): String =
+        String.format(
             "flutter.bonus_seconds_%s_%04d-%02d-%02d",
-            groupName,
-            day.get(Calendar.YEAR),
-            day.get(Calendar.MONTH) + 1,
+            groupName, day.get(Calendar.YEAR), day.get(Calendar.MONTH) + 1,
             day.get(Calendar.DAY_OF_MONTH),
         )
-        return prefs.getFlutterInt(key, 0)
+
+    private fun bonusAnchorKey(groupName: String, day: Calendar): String =
+        String.format(
+            "flutter.bonus_anchor_%s_%04d-%02d-%02d",
+            groupName, day.get(Calendar.YEAR), day.get(Calendar.MONTH) + 1,
+            day.get(Calendar.DAY_OF_MONTH),
+        )
+
+    /**
+     * Ceiling in minutes: the higher of the limit and the credit budget.
+     *
+     * Credit reaches (usage at grant) + (everything granted) — a fixed budget,
+     * not a balance to subtract from the limit. Subtracting spent credit would
+     * shrink the ceiling as the user spends it, so the instant they started
+     * using the bonus they would drop below it again. Spending must move usage
+     * up towards a target, not the target down towards usage.
+     *
+     * So a user at 50m against a 40m limit who earns 5m gets 55m — the five
+     * they chose. Adding the granted total to the limit gave 45m instead, still
+     * under their usage, so the bonus appeared to do nothing.
+     *
+     * Mirrors StorageService.effectiveLimitMinutes. Both sides must agree or
+     * the dashboard and the limiter disagree about whether the user is in.
+     *
+     * Pure reads — nothing writes on consumption, so this stays correct for a
+     * user who never opens the app between two checks.
+     */
+    private fun effectiveLimitMinutes(
+        groupName: String,
+        limit: Int,
+        usedMinutes: Int,
+        prefs: SharedPreferences,
+    ): Int {
+        if (limit == 0) return 0
+        val granted = bonusSecondsFor(groupName, prefs)
+        if (granted <= 0) return limit
+        val anchor = bonusAnchorOrNull(groupName, prefs)
+        // No anchor: a grant written before this model existed. Fall back to the
+        // additive ceiling rather than dividing by a zero anchor, which would
+        // silently confiscate bonus the user had already paid for.
+        if (anchor == null) return limit + granted / 60
+        val creditCeiling = (anchor * 60 + granted) / 60
+        return if (creditCeiling > limit) creditCeiling else limit
     }
 
     /** Start of the current usage day — midnight of the reset hour. */
@@ -904,9 +961,9 @@ class UsageAccessibilityService : AccessibilityService() {
                 val p = root.packageName?.toString()?.trim() ?: continue
                 val pair = pkgToGroup[p] ?: continue
                 val (name, limit) = pair
-                val bonus = bonusSecondsFor(name, prefs)
-                val totalLimit = limit + (bonus / 60)
-                if (totalLimit == 0 || groupUsageMinutes(name, prefs) >= totalLimit) {
+                val used = groupUsageMinutes(name, prefs)
+                val totalLimit = effectiveLimitMinutes(name, limit, used, prefs)
+                if (totalLimit == 0 || used >= totalLimit) {
                     blockApp(p, name); return
                 }
             }

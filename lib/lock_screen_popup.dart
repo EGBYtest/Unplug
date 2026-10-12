@@ -4,6 +4,8 @@ import 'package:flutter/material.dart' show Colors;
 import 'services/reward_gate.dart';
 import 'services/message_verification.dart';
 import 'services/storage_service.dart';
+import 'services/usage_tracker.dart';
+import 'models/app_group.dart';
 import 'utils/no_paste_formatter.dart';
 
 class LockScreenPopup extends StatefulWidget {
@@ -77,7 +79,32 @@ class _LockScreenPopupState extends State<LockScreenPopup> {
   String get _effectiveGroupName => widget.groupName ?? widget.appName;
 
   Future<void> _grantBonusTime() async {
-    await _storage.addBonusSeconds(_effectiveGroupName, _storage.bonusRewardSeconds);
+    // Anchor the credit to the group's usage *now*, so the bonus buys exactly
+    // the amount chosen no matter how far over the limit the user already is.
+    // Without a real anchor this would default to 0, and the first few minutes
+    // of the day would silently swallow the credit instead of extending past
+    // the current usage.
+    int anchor = 0;
+    AppGroup? group;
+    for (final g in _storage.loadGroups()) {
+      if (g.name == _effectiveGroupName) {
+        group = g;
+        break;
+      }
+    }
+    if (group != null) {
+      try {
+        anchor = await UsageTracker().getGroupUsage(group.packageNames);
+      } catch (_) {
+        // Usage access revoked, or the query failed. 0 is the safe anchor:
+        // it grants at least the configured reward rather than less.
+      }
+    }
+    await _storage.addBonusSeconds(
+      _effectiveGroupName,
+      _storage.bonusRewardSeconds,
+      usageMinutes: anchor,
+    );
     if (mounted) Navigator.of(context).pop();
   }
 

@@ -234,6 +234,201 @@ void main() {
             'ignored by the limiter',
       );
     });
+
+    test('the Kotlin side builds the same anchor key', () {
+      // The anchor is half of the consumption arithmetic. Dart writes it, the
+      // limiter reads it, and a mismatch means the limiter subtracts the wrong
+      // baseline — which reads as bonus that never runs out, or bonus that is
+      // gone before it is used.
+      final source = File(
+        'android/app/src/main/kotlin/com/egbytest/unplug/UsageAccessibilityService.kt',
+      ).readAsStringSync();
+
+      expect(
+        source,
+        contains(r'"flutter.bonus_anchor_%s_%04d-%02d-%02d"'),
+        reason: 'UsageAccessibilityService must build the same anchor key that '
+            'StorageService._bonusAnchorKey writes',
+      );
+    });
+
+    // The exact bug the user reported: at 50m used against a 40m limit, a 5m
+    // bonus used to raise the ceiling to 45m — still under the usage, so it
+    // appeared to do nothing and had to be earned three times over.
+    test('a bonus buys its face value when already over the limit', () async {
+      await StorageService().addBonusSeconds(
+        'Social Media',
+        5 * 60,
+        usageMinutes: 50,
+      );
+
+      // Ceiling is 50m (over the 40m limit) plus the 5m just earned.
+      expect(
+        StorageService().effectiveLimitMinutes('Social Media', 40, 50),
+        55,
+      );
+      // 50 used against 55 available: allowed.
+      expect(50 < StorageService().effectiveLimitMinutes('Social Media', 40, 50),
+          isTrue);
+    });
+
+    test('credit is drawn down as it is used', () async {
+      await StorageService().addBonusSeconds(
+        'Social Media',
+        5 * 60,
+        usageMinutes: 50,
+      );
+
+      // The ceiling stays at 55m while the user climbs towards it; what falls
+      // is the remaining credit. A ceiling that shrank as they spent would put
+      // them under it the instant they started.
+      expect(
+        StorageService().effectiveLimitMinutes('Social Media', 40, 53),
+        55,
+      );
+      expect(
+        StorageService().remainingBonusSeconds('Social Media', 53),
+        2 * 60,
+      );
+    });
+
+    test('credit runs out exactly when the usage catches up', () async {
+      await StorageService().addBonusSeconds(
+        'Social Media',
+        5 * 60,
+        usageMinutes: 50,
+      );
+
+      // The ceiling stays where it was put — 55m. It is a budget the user
+      // spends towards, not a balance that shrinks as they spend. What runs
+      // out is the credit itself.
+      expect(
+        StorageService().remainingBonusSeconds('Social Media', 55),
+        0,
+      );
+      expect(
+        StorageService().effectiveLimitMinutes('Social Media', 40, 55),
+        55,
+      );
+      // And at the ceiling the group is blocked again.
+      expect(
+        55 >= StorageService().effectiveLimitMinutes('Social Media', 40, 55),
+        isTrue,
+      );
+    });
+
+    test('credit never goes negative when usage overshoots', () async {
+      await StorageService().addBonusSeconds(
+        'Social Media',
+        5 * 60,
+        usageMinutes: 50,
+      );
+
+      // Usage jumped past the credit in one go.
+      expect(
+        StorageService().remainingBonusSeconds('Social Media', 80),
+        0,
+      );
+    });
+
+    // Re-anchoring on a second grant would refund everything spent since the
+    // first, silently doubling the payout.
+test('a second grant does not re-anchor', () async {
+      await StorageService()
+          .addBonusSeconds('Social Media', 5 * 60, usageMinutes: 50);
+      await StorageService()
+          .addBonusSeconds('Social Media', 5 * 60, usageMinutes: 53);
+
+      expect(StorageService().getBonusAnchorMinutes('Social Media'), 50);
+      // Credit reaches anchor + both grants = 50 + 10 = 60m. Usage at 53m
+      // has 7m of it left.
+      expect(
+        StorageService().remainingBonusSeconds('Social Media', 53),
+        7 * 60,
+      );
+    });
+
+    test('usage below the anchor does not inflate the credit', () async {
+      await StorageService().addBonusSeconds(
+        'Social Media',
+        5 * 60,
+        usageMinutes: 50,
+      );
+
+      // Usage read lower than it was at grant time — a usage-access hiccup
+      // returning a partial total, or a reset hour changed mid-day. Crediting
+      // that 40 minute gap back would hand out 45 minutes of free screen time
+      // that nobody earned, so the gap is simply not counted as spending.
+      expect(
+        StorageService().remainingBonusSeconds('Social Media', 10),
+        5 * 60,
+      );
+      // The ceiling is unaffected either way.
+      expect(
+        StorageService().effectiveLimitMinutes('Social Media', 40, 10),
+        55,
+      );
+    });
+
+    test('a pre-model grant with no anchor keeps the additive ceiling',
+        () async {
+      // Installs upgrading from the old model carry a granted total and no
+      // anchor. Reading the absent anchor as 0 would compute a ceiling of
+      // granted/60 — 5m instead of 45m — silently confiscating bonus the user
+      // had already paid for.
+      final today = StorageService().dayKey(DateTime.now());
+      SharedPreferences.setMockInitialValues({
+        'bonus_seconds_Social Media_$today': 5 * 60,
+      });
+      await StorageService().init();
+
+      expect(StorageService().getBonusAnchorMinutesOrNull('Social Media'),
+          isNull);
+      expect(
+        StorageService().effectiveLimitMinutes('Social Media', 40, 40),
+        45,
+      );
+      // Nothing has been spent, so it reads as fully available.
+      expect(
+        StorageService().remainingBonusSeconds('Social Media', 40),
+        5 * 60,
+      );
+    });
+
+    test('a zero limit stays zero even with credit', () async {
+      await StorageService().addBonusSeconds(
+        'Social Media',
+        5 * 60,
+        usageMinutes: 50,
+      );
+
+      expect(
+        StorageService().effectiveLimitMinutes('Social Media', 0, 50),
+        0,
+      );
+    });
+
+    test('resetting clears the anchor as well as the grant', () async {
+      await StorageService().addBonusSeconds(
+          'Social Media', 300, usageMinutes: 50);
+      await StorageService().resetBonusSeconds('Social Media');
+
+      expect(StorageService().getBonusSeconds('Social Media'), 0);
+      expect(StorageService().getBonusAnchorMinutes('Social Media'), 0);
+    });
+
+    test('stale anchors are swept with the stale grants', () async {
+      SharedPreferences.setMockInitialValues({
+        'bonus_anchor_Social Media_${yesterday()}': 50,
+      });
+      await StorageService().init();
+
+      await StorageService()
+          .addBonusSeconds('Social Media', 60, usageMinutes: 10);
+      final keys = (await SharedPreferences.getInstance()).getKeys();
+
+      expect(keys, isNot(contains('bonus_anchor_Social Media_${yesterday()}')));
+    });
   });
 
   group('getAverageDailyMinutes', () {

@@ -97,10 +97,6 @@ class StorageService {
     );
   }
 
-  Future<void> resetBonusSeconds(String groupName) async {
-    await _prefs?.remove(_bonusKey(groupName));
-  }
-
   // ─── Wait duration ──────────────────────────────────────────────────────────
   // How long the bonus-time wait actually runs, in seconds.
   //
@@ -115,13 +111,19 @@ class StorageService {
   /// Ceiling. Beyond this the wait stops being a negotiation and becomes a
   /// punishment — long enough that a user in the middle of something will just
   /// uninstall instead, which is the exact opposite of the intended outcome.
-  static const int maxWaitSeconds = 5 * 60;
+  ///
+  /// 3m59s rather than a round 5m: the second wheel can reach 59, so a round
+  /// ceiling would make the last four minutes unreachable and 4:00 would read
+  /// as "the end" while sitting visibly above 3:59. The wheel should end where
+  /// it looks like it ends.
+  static const int maxWaitSeconds = 3 * 60 + 59;
 
   static const int defaultWaitSeconds = 30;
 
-  /// Step between selectable values. 30s granularity keeps the list short
-  /// enough to be a deliberate choice rather than a scroll to be lost in.
-  static const int waitStepSeconds = 30;
+  /// Step between selectable values. Every second is meaningful here — the
+  /// whole point of the setting is choosing the precise amount of friction, so
+  /// a coarse grid would defeat it.
+  static const int waitStepSeconds = 1;
 
   /// Every selectable wait duration, from the floor up to and including the
   /// ceiling. An explicit bounded list, for the same reason
@@ -336,8 +338,29 @@ class StorageService {
 
   // ─── Bonus seconds ────────────────────────────────────────────────────────
   // Bonus is stored in SECONDS for precision; limits are in minutes.
+  //
+  // MODEL: bonus is a *credit*, not a raise of the daily limit.
+  //
+  // It used to be added to the limit: totalLimit = limit + bonus. That reads
+  // naturally but behaves badly. A user at 50 minutes against a 40 minute
+  // limit who wants 5 more minutes has to clear 50 before a 5 minute bonus
+  // lifts the ceiling to 45 — which is still under 50, so it does nothing.
+  // They watch three bonuses to get the ceiling to 55 and end up with 5
+  // minutes of headroom for three waits' effort. The number the user picked
+  // and the number they got are not the same number.
+  //
+  // Now the ceiling is: limit + remainingCredit, where credit is drawn down as
+  // it is spent. Spending is measured against an anchor — the usage reading at
+  // the moment the bonus was granted — so the credit always buys exactly the
+  // amount the user chose, no matter how far over the limit they already were.
+  //
+  // The anchor is what makes this a pure read. Neither side writes on
+  // consumption: the balance is (granted - spent), and spent is derived as
+  // (usageNow - anchor). The native service therefore still only reads
+  // SharedPreferences, which is what keeps enforcement working while the app
+  // is closed.
 
-  /// Key for a group's bonus, scoped to the day it was earned on.
+  /// Key for a group's granted credit, scoped to the day it was earned on.
   ///
   /// Day-scoping the key rather than clearing it is what makes the daily
   /// reset hold on both sides. The native AccessibilityService reads this key
@@ -352,14 +375,98 @@ class StorageService {
   String _bonusKey(String groupName) =>
       'bonus_seconds_${groupName}_${dayKey(DateTime.now())}';
 
+  /// Usage reading captured when credit was granted. Same day scoping and
+  /// same cross-language contract as [_bonusKey].
+  String _bonusAnchorKey(String groupName) =>
+      'bonus_anchor_${groupName}_${dayKey(DateTime.now())}';
+
+  /// Total credit granted today, before consumption. This is what
+  /// [addBonusSeconds] accumulates and what the native service reads.
   int getBonusSeconds(String groupName) =>
       _prefs?.getInt(_bonusKey(groupName)) ?? 0;
 
-  Future<void> addBonusSeconds(String groupName, int seconds) async {
+/// Usage reading captured when credit was granted, or null if there is none.
+  ///
+  /// Null is distinct from zero. Installs upgrading from the old additive
+  /// model carry a granted total with no anchor beside it, and reading that as
+  /// an anchor of 0 would compute a ceiling of granted/60 — for a user with a
+  /// 40 minute limit and 5 minutes of bonus, 5 rather than 45. They would
+  /// silently lose bonus they had paid for. [effectiveLimitMinutes] falls back
+  /// to the old arithmetic for those.
+  int? getBonusAnchorMinutesOrNull(String groupName) =>
+      _prefs?.getInt(_bonusAnchorKey(groupName));
+
+  int getBonusAnchorMinutes(String groupName) =>
+      getBonusAnchorMinutesOrNull(groupName) ?? 0;
+
+  /// Grants [seconds] of credit, anchoring to [usageMinutes] on first grant.
+  ///
+  /// The anchor is only written when there is not one yet. Re-anchoring on a
+  /// second grant would silently refund everything spent since the first:
+  /// granting 5m, using 5m, then granting 5m would look like 10m still
+  /// available instead of 5m.
+  Future<void> addBonusSeconds(
+    String groupName,
+    int seconds, {
+    int usageMinutes = 0,
+  }) async {
     final key = _bonusKey(groupName);
+    final anchorKey = _bonusAnchorKey(groupName);
     final current = _prefs?.getInt(key) ?? 0;
     unawaited(_purgeStaleBonuses());
+    if ((_prefs?.getInt(anchorKey) ?? -1) < 0) {
+      await _prefs?.setInt(anchorKey, usageMinutes);
+    }
     await _prefs?.setInt(key, current + seconds);
+  }
+
+  /// Credit remaining, in seconds.
+  ///
+  /// [usageMinutes] is the group's usage reading now. Only usage *beyond* the
+  /// anchor draws credit down. Usage can legitimately read lower than the
+  /// grant-time value — usage access hiccuping and returning a partial total,
+  /// or a reset hour changed mid-day — and crediting that gap back would hand
+  /// out time nobody earned, by a margin as large as the gap.
+  int remainingBonusSeconds(String groupName, int usageMinutes) {
+    final granted = getBonusSeconds(groupName);
+    if (granted <= 0) return 0;
+    final anchor = getBonusAnchorMinutesOrNull(groupName);
+    // No anchor: written before this model existed. Treat as unspent.
+    if (anchor == null) return granted;
+    final spent = usageMinutes > anchor ? usageMinutes - anchor : 0;
+    final remaining = granted - spent * 60;
+    return remaining > 0 ? remaining : 0;
+  }
+
+  /// Ceiling in minutes: the higher of the limit and the credit budget.
+  ///
+  /// Credit reaches (usage at grant) + (everything granted) — a fixed budget,
+  /// not a balance to subtract from the limit. Subtracting spent credit would
+  /// shrink the ceiling as the user spends it, so the instant they started
+  /// using the bonus they would drop below it again. Spending has to move
+  /// usage up towards a target, not the target down towards usage.
+  ///
+  /// So a user at 50 minutes against a 40 minute limit who earns 5 minutes
+  /// gets a 55 minute ceiling — the five they chose — rather than 45, which is
+  /// still under their usage and would look like the bonus did nothing.
+  ///
+  /// Shared with the native service, which computes the same expression from
+  /// the same keys. Both sides must agree or the dashboard and the limiter
+  /// will disagree about whether the user is allowed in.
+  int effectiveLimitMinutes(
+      String groupName, int limitMinutes, int usageMinutes) {
+    if (limitMinutes == 0) return 0;
+    final granted = getBonusSeconds(groupName);
+    if (granted <= 0) return limitMinutes;
+    final anchor = getBonusAnchorMinutesOrNull(groupName);
+    if (anchor == null) return limitMinutes + granted ~/ 60;
+    final creditCeiling = (anchor * 60 + granted) ~/ 60;
+    return creditCeiling > limitMinutes ? creditCeiling : limitMinutes;
+  }
+
+  Future<void> resetBonusSeconds(String groupName) async {
+    await _prefs?.remove(_bonusKey(groupName));
+    await _prefs?.remove(_bonusAnchorKey(groupName));
   }
 
   /// Removes bonus keys that are not scoped to today.
@@ -367,11 +474,19 @@ class StorageService {
   /// Pure housekeeping — correctness does not depend on it, because the day
   /// suffix already makes a stale balance invisible to both readers. Without
   /// it these would accumulate one entry per group per day forever.
+  ///
+  /// The suffix is compared against '_<today>', matching the underscore that
+  /// [dayKey] is joined with. It used to test for '-<today>', which no key
+  /// can ever end with, so this matched nothing and the sweep silently did
+  /// nothing for the life of the app — every day of usage adding two dead
+  /// entries per group that nothing ever read or removed.
   Future<void> _purgeStaleBonuses() async {
     final today = dayKey(DateTime.now());
+    final suffix = '_$today';
     final keys = _prefs?.getKeys() ?? {};
     for (final k in keys) {
-      if (k.startsWith('bonus_seconds_') && !k.endsWith('-$today')) {
+      if ((k.startsWith('bonus_seconds_') || k.startsWith('bonus_anchor_')) &&
+          !k.endsWith(suffix)) {
         await _prefs?.remove(k);
       }
     }

@@ -11,7 +11,8 @@ import 'package:url_launcher/url_launcher.dart';
 /// the browser via url_launcher, which is the only external interaction.
 ///
 /// The wait exists to cost something. How long it costs is the user's setting
-/// ([StorageService.waitSeconds], 30s to 5m) — this class never decides it. The
+/// ([StorageService.waitSeconds], 30s to 3m59s) — this class never decides
+/// it. The
 /// timer resets in full whenever the app is backgrounded or the window
 /// shrinks, so it cannot be run away in split-screen or a floating window
 /// while doing something else.

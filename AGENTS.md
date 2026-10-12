@@ -1,5 +1,51 @@
 # Unplug — agent rules
 
+## Version scheme
+
+`MAJOR.MINOR.PATCH`, and the two lower numbers mean different things:
+
+- **MAJOR** — a breaking change to how the app behaves or is configured.
+- **MINOR** — small changes, bug fixes, security patches. Bumping the second
+  number is the owner's call: it means a run of pre-releases has been tested
+  and declared good enough to ship.
+- **PATCH** — a live pre-release. Always published with `--prerelease`, always
+  something the owner still needs to try on a device.
+
+So a change goes out as `v1.1.10` (pre-release, test it), and when the owner
+says it is good enough, the shipped release becomes `v1.2.0`.
+
+### The minor number must climb, never dip
+
+The update checker compares numerically, component by component. A release
+numbered *below* the current latest can never be seen by anyone on that
+latest, so its banner never appears and the release is invisible to users who
+do not find it by hand.
+
+This is not theoretical. `v1.8.9` was published to prove that comparison does
+real numeric ordering across the minor component — it did, the banner fired —
+but it left the whole 1.1.x series permanently unable to trigger the banner,
+because `1.1.x` is numerically older than the published `1.8.9`. It had to be
+renamed to `v1.1.9` and marked a pre-release.
+
+Never publish a version number below the current latest, and never burn a
+version number to test the banner. `test/version_test.dart` and
+`test/update_detection_test.dart` already cover the comparison against the real
+sources; a release-day banner test needs an on-device person, not a version
+number.
+
+### Pre-releases and `releases/latest`
+
+GitHub's `releases/latest` **excludes pre-releases**, and that is the endpoint
+the in-app checker reads. So while `v1.1.10` is a pre-release, users still see
+`v1.1.8` or whatever the last shipped release was. That is intended: pre-release
+users install by hand, and everyone else is not offered something unfinished.
+
+Check what the checker will actually see:
+
+```bash
+gh api repos/EGBYtest/Unplug/releases/latest --jq .tag_name
+```
+
 ## Release rule: the README is part of every release
 
 When cutting a version bump, tagging, or publishing a release to GitHub, the
@@ -17,6 +63,7 @@ Checklist before tagging:
       and check each hit is either current or deliberately historical
 - [ ] Anything user-visible that changed since the last release is described
 - [ ] Release notes state what to spot-check on device
+- [ ] Pre-release or not, decided per the version scheme above
 
 `releases/latest` is what the in-app update checker reads, so the tag is the
 user-visible version. If the README and the tag disagree, the README is wrong.

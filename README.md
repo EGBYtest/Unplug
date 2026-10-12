@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <strong>Version 1.8.9</strong>
+  <strong>Version 1.2.0</strong>
 </p>
 
 ---
@@ -124,16 +124,16 @@ Smart detection exits only the blocked tab. The app stays open.
 ### Earn More Time — Mindfully
 | Method | Bonus | The Catch |
 |--------|-------|------------|
-| Wait 30 seconds (configurable, 30s–5m) | +1 min (configurable, up to 20 min) | The timer resets in full if you leave the app or shrink the window, so it cannot run in the background |
+| Wait 30 seconds (configurable, 30s–3m 59s) | +1 min (configurable, up to 20 min) | The timer resets in full if you leave the app or shrink the window, so it cannot run in the background |
 | Type a 50-word challenge | +1 min | Exact match required. No copy-paste. |
 
 Both are intentionally inconvenient — that's the point. If you really need more time, you'll do it. If not, you'll put the phone down.
 
-**Both halves of the trade are yours to set.** How long you wait is adjustable from **30 seconds to 5 minutes** in Settings → Reward-to-Time Ratio → Wait Duration, and what a completed wait pays is adjustable from **0 to 20 minutes** on the adjacent "Reward per Wait" setting. Setting a longer wait does not increase the bonus — it is the same cost and the same payout, which is the point: the app should not get to decide how much friction you are willing to accept.
+**Both halves of the trade are yours to set.** How long you wait is adjustable from **30 seconds to 3 minutes 59 seconds** in Settings → Reward-to-Time Ratio → Wait Duration, and what a completed wait pays is adjustable from **0 to 20 minutes** on the adjacent "Reward per Wait" setting. Setting a longer wait does not increase the bonus — it is the same cost and the same payout, which is the point: the app should not get to decide how much friction you are willing to accept. The wait picker is a minutes-and-seconds wheel; spinning below 30 seconds snaps it back with a "minimum wait is 30 seconds" message rather than quietly saving a shorter wait.
 
 The 30-second wait is **not an advertisement and contains no ad SDK**. It is a plain timer dialog that shows a link to [yourwatch.no](https://yourwatch.no), where we sell custom watches. It makes no network requests. If you tap the link, your browser opens our site — that is the only thing it does.
 
-Bonus time is **not drawn down as you use it** — it raises your limit for the day and stays raised. That makes the reward per wait a multiplier on 30 seconds of waiting, so it is capped at **20 minutes**, in whole-minute steps. If you want a tighter budget than that, set it lower; the ceiling only stops the setting from being absurd.
+**Bonus time is spent, not banked.** Earning bonus gives you a fixed amount of extra screen time *from wherever you already are*, and it is consumed as you use it — then it is gone. If you are at 50 minutes against a 40-minute limit and you complete a wait worth 5 minutes, you get 55 minutes, not 45. You do not have to climb back to the limit first to make a bonus worth anything. The reward per wait is capped at **20 minutes** for the same reason: it is a one-off grant, so the ceiling only stops a single wait from being absurd.
 
 Bonus expires on its own at your reset hour, whether or not you open the app — the day is part of the stored key, so the native limiter cannot see yesterday's balance even if Unplug has not run since.
 
@@ -180,7 +180,7 @@ Settings → Accessibility → Downloaded apps → Unplug
 
 ## Download
 
-**[Download the newest APK (v1.8.9)](https://github.com/EGBYtest/Unplug/releases/latest)** from GitHub Releases.
+**[Download the newest APK (v1.2.0)](https://github.com/EGBYtest/Unplug/releases/latest)** from GitHub Releases.
 
 Requirements:
 - Android 7.0+ (API 24) — raised from API 22 in v1.1.0 by the Flutter toolchain bump
@@ -200,7 +200,9 @@ Unplug checks GitHub for a newer release and shows a blue **"Update vX.Y.Z avail
 - The dashboard polls every 10 minutes, but the checker itself allows at most one real network lookup every 30 minutes, and a cold start always checks immediately (the cache lives in the app process).
 - If a release is newer but the banner does not appear, that is a real failure worth reporting with the version from Settings → About and `adb logcat -s Unplug: UpdateChecker`.
 
-> **If you are on v1.1.7 or older, download v1.8.9 manually.** Those builds were missing the `INTERNET` permission and could not reach the network, so the banner was never going to appear for you — and, for the same reason, those builds cannot discover any newer release on their own. This was fixed in v1.1.8. Once you are on v1.1.8 or later, updates work normally.
+> **If you are on v1.1.7 or older, download v1.2.0 manually.** Those builds were missing the `INTERNET` permission and could not reach the network, so the banner was never going to appear for you — and, for the same reason, those builds cannot discover any newer release on their own. This was fixed in v1.1.8. Once you are on v1.1.8 or later, updates work normally.
+>
+> If you installed the build briefly published as **v1.8.9**, download v1.2.0 manually too. That release has been renamed to **v1.1.9** and marked a pre-release, because the 1.8.9 number left every 1.1.x release looking older than it and therefore unable to trigger the banner. The APK itself is unchanged.
 
 ---
 
@@ -278,7 +280,7 @@ Unplug/
 - Android minSdk 24 / targetSdk 36
 
 ### Verify a release
-1. Check the release tag (`v1.8.9`) and the published `VERSION` file match.
+1. Check the release tag (`v1.2.0`) and the published `VERSION` file match.
 2. Optionally rebuild the APK from the tagged source yourself (`flutter build apk --release`) and compare behavior/checksum expectations.
 3. Audit network usage: search the codebase for `HttpClient`, `http`, `WebView`, and `Socket` — every outbound request is in `lib/services/update_checker.dart`. There is no ad SDK and no analytics SDK to find; if you find one, that is a red flag.
 

@@ -223,9 +223,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           final i = entry.key;
                           final group = entry.value;
                           final used = _usageMinutes[group.name] ?? 0;
-                          final bonusSeconds = _storage.getBonusSeconds(group.name);
+                          final bonusSeconds =
+                              _storage.remainingBonusSeconds(group.name, used);
                           final bonusMinutes = bonusSeconds ~/ 60;
-                          final effectiveLimit = group.timeLimitMinutes + bonusMinutes;
+                          final effectiveLimit = _storage.effectiveLimitMinutes(
+                              group.name, group.timeLimitMinutes, used);
                           // 0-minute limit = always blocked; clamp usage for display
                           final remaining = effectiveLimit == 0 ? 0 : (effectiveLimit - used).clamp(0, effectiveLimit);
                           final isExhausted = effectiveLimit == 0 || used >= effectiveLimit;
@@ -477,10 +479,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Widget _buildStatCards() {
+    // Effective limit, not limit + lifetime granted credit. Credit is spent as
+    // it is used, so the granted total no longer describes what the user has
+    // left — this must agree with the native limiter's own arithmetic or the
+    // dashboard will show a group as available that enforcement blocks.
     final exhausted = _groups.where((g) {
       final used = _usageMinutes[g.name] ?? 0;
-      final bonusMinutes = _storage.getBonusSeconds(g.name) ~/ 60;
-      final effectiveLimit = g.timeLimitMinutes + bonusMinutes;
+      final effectiveLimit =
+          _storage.effectiveLimitMinutes(g.name, g.timeLimitMinutes, used);
       return effectiveLimit == 0 || used >= effectiveLimit;
     }).length;
 

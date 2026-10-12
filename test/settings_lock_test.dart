@@ -125,14 +125,17 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    test('options run from 30s to 5m in 30s steps', () {
+    test('options run from 30s to 3m59s at every second', () {
       final options = StorageService.waitOptions();
       expect(options.first, StorageService.minWaitSeconds);
       expect(options.last, StorageService.maxWaitSeconds);
+      expect(options.last, 3 * 60 + 59);
       expect(options.contains(30), isTrue);
-      expect(options.contains(300), isTrue);
-      // Nothing outside the range is ever offered.
-      expect(options.every((s) => s >= 30 && s <= 300), isTrue);
+      expect(options.contains(239), isTrue);
+      // Every second is reachable — a coarse grid would defeat the point of
+      // choosing the precise amount of friction.
+      expect(options.length, 3 * 60 + 59 - 30 + 1);
+      expect(options.every((s) => s >= 30 && s <= 239), isTrue);
     });
 
     test('defaults to the original 30s wait', () async {
@@ -156,19 +159,45 @@ void main() {
       expect(StorageService().waitSeconds, 120);
     });
 
-    testWidgets('the picker shows the range and opens', (tester) async {
-      await openWaitPicker(tester);
-      expect(find.text('30s to 5m. A longer wait earns the same bonus.'),
-          findsOneWidget);
-      expect(find.byType(CupertinoPicker), findsOneWidget);
-    });
-
-    testWidgets('dragging hard past the end does not exceed the ceiling',
+    testWidgets('the picker shows two wheels and the range hint',
         (tester) async {
       await openWaitPicker(tester);
+      // One wheel for minutes, one for seconds.
+      expect(find.byType(CupertinoPicker), findsNWidgets(2));
+    });
 
+    testWidgets('dragging the minute wheel past the end stops at 3 minutes',
+        (tester) async {
+      await StorageService().saveWaitSeconds(150);
+      await openWaitPicker(tester);
+
+      // Minutes top out at 3. Seconds are left at 30, so the ceiling is
+      // 3m30s — the two wheels cannot combine to reach 3m59s by dragging
+      // minutes alone, which is why the second wheel exists.
+      final minuteWheel = find.byType(CupertinoPicker).first;
       for (var i = 0; i < 8; i++) {
-        await tester.drag(find.byType(CupertinoPicker), const Offset(0, -600));
+        await tester.drag(minuteWheel, const Offset(0, -600));
+        await tester.pumpAndSettle();
+      }
+      await tester.tap(find.text('Save').last);
+      await tester.pumpAndSettle();
+
+      expect(StorageService().waitSeconds, 3 * 60 + 30);
+    });
+
+    testWidgets('the ceiling 3m59s is reachable and is the maximum',
+        (tester) async {
+      await StorageService().saveWaitSeconds(239);
+      await openWaitPicker(tester);
+
+      // Start at the ceiling and push both wheels up. The minute wheel is
+      // already at its maximum, so nothing can exceed it.
+      final minuteWheel = find.byType(CupertinoPicker).first;
+      final secondWheel = find.byType(CupertinoPicker).at(1);
+      for (var i = 0; i < 4; i++) {
+        await tester.drag(minuteWheel, const Offset(0, -600));
+        await tester.pumpAndSettle();
+        await tester.drag(secondWheel, const Offset(0, -600));
         await tester.pumpAndSettle();
       }
       await tester.tap(find.text('Save').last);
@@ -177,15 +206,21 @@ void main() {
       expect(StorageService().waitSeconds, StorageService.maxWaitSeconds);
     });
 
-    testWidgets('dragging hard past the start does not go below the floor',
+    testWidgets('dragging the second wheel below the floor bounces back',
         (tester) async {
-      await StorageService().saveWaitSeconds(300);
+      // Start at 0m30s: the only way under the floor is to spin the seconds
+      // wheel down while minutes sit at 0.
+      await StorageService().saveWaitSeconds(30);
       await openWaitPicker(tester);
 
-      for (var i = 0; i < 8; i++) {
-        await tester.drag(find.byType(CupertinoPicker), const Offset(0, 600));
+      final secondWheel = find.byType(CupertinoPicker).at(1);
+      for (var i = 0; i < 10; i++) {
+        await tester.drag(secondWheel, const Offset(0, 600));
         await tester.pumpAndSettle();
       }
+
+      expect(find.text('Minimum wait is 30 seconds'), findsOneWidget);
+
       await tester.tap(find.text('Save').last);
       await tester.pumpAndSettle();
 

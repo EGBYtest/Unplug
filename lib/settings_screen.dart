@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'services/reward_gate.dart';
 import 'services/message_verification.dart';
 import 'services/storage_service.dart';
+import 'services/usage_tracker.dart';
 import 'models/app_group.dart';
 import 'utils/no_paste_formatter.dart';
 import 'screens/app_picker_screen.dart';
@@ -26,6 +27,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late int _resetHour;
   late bool _settingsLock;
 
+  /// Per-group usage reading, used to work out how much bonus credit is
+  /// actually left. Credit is anchored to the usage at grant time, so a
+  /// granted total no longer describes what remains — showing it would
+  /// disagree with what the limiter will actually allow.
+  final Map<String, int> _usageMinutes = {};
+
   @override
   void initState() {
     super.initState();
@@ -35,6 +42,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _waitSeconds = _storage.waitSeconds;
     _resetHour = _storage.resetHour;
     _settingsLock = _storage.settingsLockEnabled;
+    _loadUsage();
+  }
+
+  Future<void> _loadUsage() async {
+    for (final g in List<AppGroup>.from(_storage.loadGroups())) {
+      int used = 0;
+      try {
+        used = await UsageTracker().getGroupUsage(g.packageNames);
+      } catch (_) {
+        // Usage access revoked, or the query failed. Treat as zero: shows the
+        // full granted credit rather than throwing the screen away.
+      }
+      if (mounted) setState(() => _usageMinutes[g.name] = used);
+    }
   }
 
   // ─── Per-Change Challenge ─────────────────────────────────
@@ -320,75 +341,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
   // ─── Edit Wait Duration ─────────────────────────────────────────────────────
 
   void _editWaitDuration() {
-    final options = StorageService.waitOptions();
-    var selectedIndex = options.indexOf(_waitSeconds);
-    if (selectedIndex < 0) selectedIndex = options.indexOf(StorageService.defaultWaitSeconds);
-    if (selectedIndex < 0) selectedIndex = 0;
+    var totalSeconds = _waitSeconds;
 
     showCupertinoModalPopup(
       context: context,
-      builder: (_) => Container(
-        height: 340,
-        decoration: const BoxDecoration(
-          color: Color(0xFF1C1C1E),
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  CupertinoButton(
-                    padding: EdgeInsets.zero,
-                    child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                  const Text('Wait Duration', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-                  CupertinoButton(
-                    padding: EdgeInsets.zero,
-                    child: const Text('Save', style: TextStyle(color: Color(0xFF0A84FF), fontWeight: FontWeight.bold)),
-                    onPressed: () async {
-                      final value = options[selectedIndex];
-                      setState(() => _waitSeconds = value);
-                      await _storage.saveWaitSeconds(value);
-                      if (mounted) Navigator.pop(context);
-                    },
-                  ),
-                ],
-              ),
-            ),
-            const Divider(color: Colors.white12, height: 1),
-            const Text('How long you wait for bonus time', style: TextStyle(color: Colors.white54, fontSize: 13)),
-            const Padding(
-              padding: EdgeInsets.only(bottom: 4),
-              child: Text(
-                '30s to 5m. A longer wait earns the same bonus.',
-                style: TextStyle(color: Colors.white38, fontSize: 12),
-              ),
-            ),
-            Expanded(
-              // Bounded list from StorageService.waitOptions(), so it cannot
-              // be scrolled past either end.
-              child: CupertinoPicker(
-                itemExtent: 40,
-                scrollController:
-                    FixedExtentScrollController(initialItem: selectedIndex),
-                onSelectedItemChanged: (i) => selectedIndex = i,
-                children: options
-                    .map((s) => Center(
-                          child: Text(
-                            _formatSeconds(s),
-                            style: const TextStyle(
-                                color: Colors.white, fontSize: 20),
-                          ),
-                        ))
-                    .toList(),
-              ),
-            ),
-          ],
-        ),
+      builder: (popupContext) => _WaitDurationSheet(
+        initialSeconds: totalSeconds,
+        onCancel: () => Navigator.pop(popupContext),
+        onSave: (value) async {
+          setState(() => _waitSeconds = value);
+          await _storage.saveWaitSeconds(value);
+          if (mounted) Navigator.pop(popupContext);
+        },
       ),
     );
   }
@@ -455,7 +419,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   children: _groups.asMap().entries.map((e) {
                     final i = e.key;
                     final group = e.value;
-                    final bonusSeconds = _storage.getBonusSeconds(group.name);
+final bonusSeconds = _storage.remainingBonusSeconds(
+                        group.name, _usageMinutes[group.name] ?? 0);
                     return CupertinoListTile(
                       backgroundColor: const Color(0xFF1C1C1E),
                       leading: const Icon(CupertinoIcons.timer, color: Color(0xFF0A84FF), size: 22),
@@ -551,7 +516,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       backgroundColor: const Color(0xFF1C1C1E),
                       leading: const Icon(CupertinoIcons.clock_fill, color: Color(0xFF0A84FF), size: 22),
                       title: const Text('Wait Duration', style: TextStyle(color: Colors.white)),
-                      subtitle: const Text('30s to 5m', style: TextStyle(color: Colors.white38, fontSize: 12)),
+                      subtitle: const Text('30s to 3m 59s', style: TextStyle(color: Colors.white38, fontSize: 12)),
                       additionalInfo: Text(_formatSeconds(_waitSeconds), style: const TextStyle(color: Colors.white70)),
                       trailing: const CupertinoListTileChevron(),
                       onTap: () => _confirmChange(_editWaitDuration),
@@ -676,7 +641,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   void _showGroupOptions(int index) {
     final group = _groups[index];
-    final bonusSeconds = _storage.getBonusSeconds(group.name);
+    final bonusSeconds = _storage.remainingBonusSeconds(
+        group.name, _usageMinutes[group.name] ?? 0);
     showCupertinoModalPopup(
       context: context,
       builder: (_) => CupertinoActionSheet(
@@ -866,5 +832,189 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final m = totalSeconds ~/ 60;
     final s = totalSeconds % 60;
     return s == 0 ? '${m}m' : '${m}m ${s}s';
+  }
+}
+
+/// Minute/second wheels for the bonus wait.
+///
+/// Two plain CupertinoPickers rather than CupertinoTimerPicker. TimerPicker
+/// sizes its minute wheel from the initial duration it is given, so it cannot
+/// express a fixed 0–3:59 range — passing 30s yields a one-minute wheel, and
+/// the range moves as you scroll. Explicit wheels keep the range fixed.
+///
+/// The floor is enforced by snapping back rather than by withholding options.
+/// Letting a user spin to 0:05, silently saving 5s, and only then finding out
+/// is worse than a wheel that refuses to settle there: the setting is meant to
+/// be the user's expression of how much friction they want, so a value the app
+/// will not honour should not be selectable at all.
+class _WaitDurationSheet extends StatefulWidget {
+  final int initialSeconds;
+  final VoidCallback onCancel;
+  final ValueChanged<int> onSave;
+
+  const _WaitDurationSheet({
+    required this.initialSeconds,
+    required this.onCancel,
+    required this.onSave,
+  });
+
+  @override
+  State<_WaitDurationSheet> createState() => _WaitDurationSheetState();
+}
+
+class _WaitDurationSheetState extends State<_WaitDurationSheet> {
+  static const int _floor = StorageService.minWaitSeconds;
+  static const int _ceiling = StorageService.maxWaitSeconds;
+
+  late int _minutes;
+  late int _seconds;
+
+  String? _warning;
+
+  /// Rebuilt whenever the selection is corrected, so the wheels jump back
+  /// rather than sitting on a value that was rejected.
+  late FixedExtentScrollController _minuteCtl;
+  late FixedExtentScrollController _secondCtl;
+
+  @override
+  void initState() {
+    super.initState();
+    final initial = widget.initialSeconds.clamp(_floor, _ceiling);
+    _minutes = initial ~/ 60;
+    _seconds = initial % 60;
+    _minuteCtl = FixedExtentScrollController(initialItem: _minutes);
+    _secondCtl = FixedExtentScrollController(initialItem: _seconds);
+  }
+
+  @override
+  void dispose() {
+    _minuteCtl.dispose();
+    _secondCtl.dispose();
+    super.dispose();
+  }
+
+  int get _total => _minutes * 60 + _seconds;
+
+  void _onWheelChanged() {
+    final total = _total;
+    if (total < _floor) {
+      // Snap the offending wheel to the floor and say why. 0m30s is reachable
+      // from either wheel, so both are recomputed from the floored total.
+      final floored = _floor;
+      setState(() {
+        _minutes = floored ~/ 60;
+        _seconds = floored % 60;
+        _warning = 'Minimum wait is 30 seconds';
+        _minuteCtl = FixedExtentScrollController(initialItem: _minutes);
+        _secondCtl = FixedExtentScrollController(initialItem: _seconds);
+      });
+      return;
+    }
+    if (total > _ceiling) {
+      final capped = _ceiling;
+      setState(() {
+        _minutes = capped ~/ 60;
+        _seconds = capped % 60;
+        _warning = 'Maximum wait is 3 minutes 59 seconds';
+        _minuteCtl = FixedExtentScrollController(initialItem: _minutes);
+        _secondCtl = FixedExtentScrollController(initialItem: _seconds);
+      });
+      return;
+    }
+    if (_warning != null) setState(() => _warning = null);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 360,
+      decoration: const BoxDecoration(
+        color: Color(0xFF1C1C1E),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  child: const Text('Cancel',
+                      style: TextStyle(color: Colors.white54)),
+                  onPressed: widget.onCancel,
+                ),
+                const Text('Wait Duration',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16)),
+                CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  child: const Text('Save',
+                      style: TextStyle(
+                          color: Color(0xFF0A84FF),
+                          fontWeight: FontWeight.bold)),
+                  onPressed: () => widget.onSave(_total.clamp(_floor, _ceiling)),
+                ),
+              ],
+            ),
+          ),
+          const Divider(color: Colors.white12, height: 1),
+          const Text('How long you wait for bonus time',
+              style: TextStyle(color: Colors.white54, fontSize: 13)),
+          // Reserved height so the wheels do not jump when the warning
+          // appears and disappears.
+          SizedBox(
+            height: 20,
+            child: Center(
+              child: _warning == null
+                  ? null
+                  : Text(_warning!,
+                      style: const TextStyle(
+                          color: Color(0xFFFF9F0A), fontSize: 12)),
+            ),
+          ),
+          Expanded(
+            child: Row(
+              children: [
+                Expanded(child: _wheel('min', _ceiling ~/ 60, _minutes, _minuteCtl)),
+                Expanded(child: _wheel('sec', 59, _seconds, _secondCtl)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _wheel(
+    String label,
+    int max,
+    int value,
+    FixedExtentScrollController controller,
+  ) {
+    return CupertinoPicker(
+      itemExtent: 40,
+      scrollController: controller,
+      onSelectedItemChanged: (i) {
+        if (label == 'min') {
+          _minutes = i;
+        } else {
+          _seconds = i;
+        }
+        _onWheelChanged();
+      },
+      children: [
+        for (int i = 0; i <= max; i++)
+          Center(
+            child: Text(
+              i < 10 ? '0$i' : '$i',
+              style: const TextStyle(color: Colors.white, fontSize: 20),
+            ),
+          ),
+      ],
+    );
   }
 }
