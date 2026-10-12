@@ -8,6 +8,7 @@ import 'services/usage_tracker.dart';
 import 'models/app_group.dart';
 import 'utils/no_paste_formatter.dart';
 import 'screens/app_picker_screen.dart';
+import 'generated/app_version.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({Key? key}) : super(key: key);
@@ -475,7 +476,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       leading: const Icon(CupertinoIcons.lock_fill, color: Color(0xFF30D158), size: 22),
                       title: const Text('Settings Lock', style: TextStyle(color: Colors.white)),
                       subtitle: Text(
-                        _settingsLock ? 'Challenge required to change settings' : 'Changes apply instantly',
+                        _settingsLock
+                            ? 'Asks a question before changing settings. Stored on-device only — not secure against a rooted phone.'
+                            : 'Changes apply instantly',
                         style: TextStyle(
                           color: _settingsLock ? const Color(0xFF30D158) : Colors.white38,
                           fontSize: 12,
@@ -534,7 +537,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       backgroundColor: Color(0xFF1C1C1E),
                       leading: Icon(CupertinoIcons.info_circle_fill, color: Colors.white38, size: 22),
                       title: Text('Version', style: TextStyle(color: Colors.white)),
-                      additionalInfo: Text('1.0.0', style: TextStyle(color: Colors.white54)),
+                      additionalInfo: Text(
+                        AppVersion.name,
+                        style: TextStyle(color: Colors.white54),
+                      ),
                     ),
                   ],
                 ),

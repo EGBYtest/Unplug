@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <strong>Version 1.0.0 — first official release</strong>
+  <strong>Version 1.1.0</strong>
 </p>
 
 ---
@@ -80,7 +80,7 @@ When you install and set up Unplug, you will very likely see one or more of the 
   - App groups, time limits, usage history, and bonus time are stored in **SharedPreferences on your device only**.
   - The native Kotlin service reads those same on-device preferences directly. **No network calls happen during enforcement.**
 - **The only network requests the app ever makes:**
-  1. An anonymous install counter (`counterapi.dev`) that fires **once** on first launch with no identifying information.
+  1. An anonymous install counter (`counterapi.dev`) that fires **once** on first launch, with no identifying information. The version string is sent as a `ref` query parameter purely to tag the count with the build it came from.
   2. Rewarded video ads (Google Mobile Ads SDK) when **you choose** to watch an ad to earn bonus time.
   3. Update checks against the GitHub Releases API so the app can tell you when a new version exists.
 - If you do not believe these claims, the source is right here — search for `http`, `HttpClient`, and `WebView` yourself and see exactly where every request goes.
@@ -126,6 +126,8 @@ Both are intentionally inconvenient — that's the point. If you really need mor
 - Editing limits, groups, or tab blockers requires completing the same ad-or-type challenge
 - Toggle Settings Lock on/off in Settings → Security
 - Prevents the "I'll just add 5 more minutes..." spiral
+
+> **Honest scope of the Settings Lock:** it is a friction mechanism, not a security control. The lock flag and your bonus-time balances are plain values in on-device SharedPreferences, which on a rooted phone can be edited or cleared with one command. It stops impulsive you, not someone who is deliberately trying to bypass it. Nothing here stops uninstalling the app.
 
 ### See Your Progress
 - **Circular ring chart** — total screen time vs. your limit, at a glance
@@ -231,7 +233,7 @@ Unplug/
 │   └── utils/
 │       └── no_paste_formatter.dart     # Clipboard paste blocker
 └── android/
-    └── app/src/main/kotlin/com/example/app_idea/
+    └── app/src/main/kotlin/com/egbytest/unplug/
         ├── MainActivity.kt             # FlutterActivity + MethodChannel
         ├── AppClosureHandler.kt        # Force-close / home redirect
         └── UsageAccessibilityService.kt # Foreground watch + enforcement + tab blocking
@@ -243,9 +245,16 @@ Unplug/
 - Android API 30+
 
 ### Verify a release
-1. Check the release tag (`v1.0.0`) and the published `VERSION` file match.
+1. Check the release tag (`v1.1.0`) and the published `VERSION` file match.
 2. Optionally rebuild the APK from the tagged source yourself (`flutter build apk --release`) and compare behavior/checksum expectations.
 3. Audit network usage: search the codebase for `HttpClient`, `http`, `WebView`, and `counterapi` — every outbound request is in `lib/main.dart` (install counter), `lib/services/update_checker.dart` (update check), and the ads SDK (rewarded ads only).
+
+### Build notes
+- The app version lives in **one** place: the `version:` line in `pubspec.yaml`. `lib/generated/app_version.dart` is generated from it by `tool/gen_version.sh` — never edit that file by hand. Regenerate with `./tool/gen_version.sh` after changing the version.
+- Build requires Gradle ≥ 8.14, AGP ≥ 8.11.1, Kotlin ≥ 2.2.20, and NDK 28.x (see `android/`). Older combinations are rejected by current Flutter.
+
+### Tag history note
+Releases before v1.0.0 exist twice under two tag series on the same commits: a `v0.x.y` series and a `v1.x.y` series (e.g. `v0.8.7-beta` and `v1.8.7-beta` both point at the same commit). The `v0.x` tags are a retired numbering track kept for history only and are not maintained. Current releases use the `v1.x` series. The in-app update checker reads `releases/latest` from GitHub and is aware of neither series.
 
 ---
 

@@ -7,6 +7,7 @@ import 'onboarding_screen.dart';
 import 'services/storage_service.dart';
 import 'services/app_closure_handler.dart';
 import 'services/update_checker.dart';
+import 'generated/app_version.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -18,8 +19,6 @@ void main() async {
   runApp(const UnplugApp());
 }
 
-const _appVersion = '1.0.0+26';
-
 Future<void> _trackInstall() async {
   final storage = StorageService();
   if (storage.installReported) return;
@@ -28,17 +27,15 @@ Future<void> _trackInstall() async {
     final client = HttpClient();
     client.connectionTimeout = const Duration(seconds: 5);
 
-    // Total installs
-    final r1 = await client.getUrl(
-      Uri.parse('https://api.counterapi.dev/v1/unplug/installs/up'),
+    // Single anonymous counter, tagged with the build it came from so the
+    // per-build number can still be derived server-side if needed.
+    final request = await client.getUrl(
+      Uri.parse(
+        'https://api.counterapi.dev/v1/unplug/installs/up'
+        '?ref=${AppVersion.full}',
+      ),
     );
-    await r1.close();
-
-    // Per-version installs
-    final r2 = await client.getUrl(
-      Uri.parse('https://api.counterapi.dev/v1/unplug/installs_v$_appVersion/up'),
-    );
-    await r2.close();
+    await request.close();
 
     await storage.setInstallReported();
     client.close();

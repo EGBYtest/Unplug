@@ -6,4 +6,4 @@
     android:accessibilityFlags="flagRetrieveInteractiveWindows|flagRequestFilterKeyEvents"
     android:canRetrieveWindowContent="true"
     android:canRequestFilterKeyEvents="true"
-    android:settingsActivity="com.example.app_idea.MainActivity" />
+    android:settingsActivity="com.egbytest.unplug.MainActivity" />

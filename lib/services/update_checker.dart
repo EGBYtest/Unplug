@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:developer' show log;
 import 'dart:io';
 
+import '../generated/app_version.dart';
+
 class UpdateInfo {
   final String latestVersion;
   final String downloadUrl;
@@ -18,8 +20,13 @@ class UpdateChecker {
   static const _githubApi = 'https://api.github.com/repos/EGBYtest/Unplug/releases/latest';
   static const _githubFallback = 'https://raw.githubusercontent.com/EGBYtest/Unplug/main/VERSION';
   static const _counterApi = 'https://api.counterapi.dev/v1/unplug/version_build/';
-  static const _currentVersion = '1.0.0';
-  static const _currentBuild = 26;
+
+  /// Version of the running build. Generated from pubspec.yaml — see
+  /// tool/gen_version.sh. Do not hardcode a version string here.
+  static const _currentVersion = AppVersion.name;
+  static const _currentBuild = AppVersion.buildNumber;
+
+  static const String _userAgent = 'Unplug/${AppVersion.full}';
 
   static UpdateInfo? cachedUpdate;
 
@@ -39,10 +46,6 @@ class UpdateChecker {
     final counter = await _tryFetchCounter();
     if (counter != null) return counter;
 
-    log('UpdateChecker: all DNS failed, trying direct IP...');
-    final direct = await _tryFetchDirectIp();
-    if (direct != null) return direct;
-
     return _noUpdate();
   }
 
@@ -53,7 +56,7 @@ class UpdateChecker {
     try {
       final client = HttpClient();
       client.connectionTimeout = const Duration(seconds: 5);
-      client.userAgent = 'Unplug/1.0.0';
+      client.userAgent = _userAgent;
 
       final request = await client.getUrl(Uri.parse(url));
       final response = await request.close();
@@ -77,7 +80,7 @@ class UpdateChecker {
         return null;
       }
 
-      if (_compareVersions(latestVersion, _currentVersion) > 0) {
+      if (compareVersions(latestVersion, _currentVersion) > 0) {
         log('UpdateChecker: update available v$latestVersion');
         return UpdateInfo(
           latestVersion: latestVersion,
@@ -97,7 +100,7 @@ class UpdateChecker {
     try {
       final client = HttpClient();
       client.connectionTimeout = const Duration(seconds: 5);
-      client.userAgent = 'Unplug/1.0.0';
+      client.userAgent = _userAgent;
 
       final request = await client.getUrl(Uri.parse(_counterApi));
       final response = await request.close();
@@ -143,62 +146,20 @@ class UpdateChecker {
     return body.trim().isEmpty ? null : body.trim();
   }
 
-  static Future<UpdateInfo?> _tryFetchDirectIp() async {
-    try {
-      final client = HttpClient()
-        ..badCertificateCallback = (_, __, ___) => true;
-      client.connectionTimeout = const Duration(seconds: 5);
-
-      final request = await client.getUrl(
-        Uri.parse('https://140.82.121.5/repos/EGBYtest/Unplug/releases/latest'),
-      );
-      request.headers.set('Host', 'api.github.com');
-      request.headers.set('User-Agent', 'Unplug/1.0.0');
-      final response = await request.close();
-
-      log('UpdateChecker: IP direct HTTP ${response.statusCode}');
-
-      if (response.statusCode != 200) {
-        client.close();
-        return null;
-      }
-
-      final body = await response.transform(utf8.decoder).join();
-      client.close();
-
-      final data = jsonDecode(body) as Map<String, dynamic>;
-      final tagName = data['tag_name'] as String? ?? '';
-      final latestVersion = tagName.replaceFirst('v', '');
-
-      log('UpdateChecker: IP direct latest=$latestVersion current=$_currentVersion');
-
-      if (latestVersion.isEmpty || latestVersion == _currentVersion) {
-        return null;
-      }
-
-      if (_compareVersions(latestVersion, _currentVersion) > 0) {
-        log('UpdateChecker: IP direct update available v$latestVersion');
-        return UpdateInfo(
-          latestVersion: latestVersion,
-          downloadUrl: 'https://github.com/EGBYtest/Unplug/releases/tag/v$latestVersion',
-          isAvailable: true,
-        );
-      }
-
-      return null;
-    } catch (e) {
-      log('UpdateChecker: IP direct error $e');
-      return null;
-    }
-  }
-
   static UpdateInfo _noUpdate() => const UpdateInfo(
     latestVersion: '',
     downloadUrl: '',
     isAvailable: false,
   );
 
-  static int _compareVersions(String a, String b) {
+  /// Compares two dotted version strings numerically, returning a negative
+  /// value if [a] is older, zero if equal, positive if [a] is newer.
+  /// Missing components count as 0, so '1.0' == '1.0.0'. Non-numeric
+  /// components ('1.0.x', '1.0.1-beta') count as 0 rather than throwing.
+  ///
+  /// Public so it can be unit tested directly — the update gate depends on
+  /// it being correct and it used to be reachable only over the network.
+  static int compareVersions(String a, String b) {
     final partsA = a.split('.').map((e) => int.tryParse(e) ?? 0).toList();
     final partsB = b.split('.').map((e) => int.tryParse(e) ?? 0).toList();
     for (int i = 0; i < partsA.length || i < partsB.length; i++) {

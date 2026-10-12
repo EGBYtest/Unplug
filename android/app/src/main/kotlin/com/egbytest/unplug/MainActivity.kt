@@ -1,4 +1,4 @@
-package com.example.app_idea
+package com.egbytest.unplug
 
 import android.content.Intent
 import android.view.KeyEvent
