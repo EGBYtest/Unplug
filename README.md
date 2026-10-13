@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <strong>Version 1.2.0</strong>
+  <strong>Version 1.2.1</strong>
 </p>
 
 ---
@@ -180,7 +180,7 @@ Settings → Accessibility → Downloaded apps → Unplug
 
 ## Download
 
-**[Download the newest APK (v1.2.0)](https://github.com/EGBYtest/Unplug/releases/latest)** from GitHub Releases.
+**[Download the newest APK (v1.2.1)](https://github.com/EGBYtest/Unplug/releases/latest)** from GitHub Releases.
 
 Requirements:
 - Android 7.0+ (API 24) — raised from API 22 in v1.1.0 by the Flutter toolchain bump
@@ -200,9 +200,9 @@ Unplug checks GitHub for a newer release and shows a blue **"Update vX.Y.Z avail
 - The dashboard polls every 10 minutes, but the checker itself allows at most one real network lookup every 30 minutes, and a cold start always checks immediately (the cache lives in the app process).
 - If a release is newer but the banner does not appear, that is a real failure worth reporting with the version from Settings → About and `adb logcat -s Unplug: UpdateChecker`.
 
-> **If you are on v1.1.7 or older, download v1.2.0 manually.** Those builds were missing the `INTERNET` permission and could not reach the network, so the banner was never going to appear for you — and, for the same reason, those builds cannot discover any newer release on their own. This was fixed in v1.1.8. Once you are on v1.1.8 or later, updates work normally.
+> **If you are on v1.1.7 or older, download v1.2.1 manually.** Those builds were missing the `INTERNET` permission and could not reach the network, so the banner was never going to appear for you — and, for the same reason, those builds cannot discover any newer release on their own. This was fixed in v1.1.8. Once you are on v1.1.8 or later, updates work normally.
 >
-> If you installed the build briefly published as **v1.8.9**, download v1.2.0 manually too. That release has been renamed to **v1.1.9** and marked a pre-release, because the 1.8.9 number left every 1.1.x release looking older than it and therefore unable to trigger the banner. The APK itself is unchanged.
+> If you installed the build briefly published as **v1.8.9**, download v1.2.1 manually too. That release has been renamed to **v1.1.9** and marked a pre-release, because the 1.8.9 number left every 1.1.x release looking older than it and therefore unable to trigger the banner. The APK itself is unchanged.
 
 ---
 
@@ -280,7 +280,7 @@ Unplug/
 - Android minSdk 24 / targetSdk 36
 
 ### Verify a release
-1. Check the release tag (`v1.2.0`) and the published `VERSION` file match.
+1. Check the release tag (`v1.2.1`) and the published `VERSION` file match.
 2. Optionally rebuild the APK from the tagged source yourself (`flutter build apk --release`) and compare behavior/checksum expectations.
 3. Audit network usage: search the codebase for `HttpClient`, `http`, `WebView`, and `Socket` — every outbound request is in `lib/services/update_checker.dart`. There is no ad SDK and no analytics SDK to find; if you find one, that is a red flag.
 
