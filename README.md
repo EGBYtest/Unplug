@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <strong>Version 2.0.0</strong> · Android 7.0+ · Free · No accounts
+  <strong>Version 2.0.1</strong> · Android 7.0+ · Free · No accounts
 </p>
 
 ---
@@ -79,7 +79,7 @@ These manufacturers bury the accessibility list somewhere different, and their b
 
 ## When you run out
 
-**Wait.** A timer. You choose the length — anything from **30 seconds to 3 minutes 59 seconds** — because how much friction you're willing to accept is your call, not the app's. The timer restarts if you leave the app or shrink the window, so it can't tick away in the background while you're doing something else.
+**Wait.** A timer. You choose the length on a **min / sec wheel** — anything from **30 seconds to 3 minutes 59 seconds** — because how much friction you're willing to accept is your call, not the app's. Spin below 30 seconds and it springs back. The timer restarts if you leave the app or shrink the window, so it can't tick away in the background while you're doing something else.
 
 **Or write.** A 50-word challenge, matched exactly. No copy-paste, no "close enough".
 
@@ -146,7 +146,7 @@ The banner only shows when there's genuinely something newer, and you can dismis
 <details>
 <summary><strong>If updates aren't appearing</strong></summary>
 
-- **On v1.1.7 or older:** those builds are missing a permission they need to reach the network at all. They can't detect any update, including the one that fixes it. Download v2.0.0 by hand.
+- **On v1.1.7 or older:** those builds are missing a permission they need to reach the network at all. They can't detect any update, including the one that fixes it. Download the latest release by hand.
 - **On v1.1.9:** also by hand. That release is a pre-release, and pre-releases aren't offered to anyone.
 - **Otherwise:** the check is throttled to once every 30 minutes, and a fresh app start always checks straight away. Force-close and reopen, then give it a few seconds.
 - Still nothing? `adb logcat -s Unplug: UpdateChecker` prints every HTTP response the checker gets, including rate-limit errors.

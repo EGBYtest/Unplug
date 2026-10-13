@@ -837,16 +837,17 @@ final bonusSeconds = _storage.remainingBonusSeconds(
 
 /// Minute/second wheels for the bonus wait.
 ///
-/// Two plain CupertinoPickers rather than CupertinoTimerPicker. TimerPicker
-/// sizes its minute wheel from the initial duration it is given, so it cannot
-/// express a fixed 0–3:59 range — passing 30s yields a one-minute wheel, and
-/// the range moves as you scroll. Explicit wheels keep the range fixed.
+/// Styled to match the Daily Time Limit wheel exactly — same item extent, same
+/// magnified type, same "min"/"sec" suffixes beside each number. Two pickers
+/// side by side rather than CupertinoTimerPicker, whose `ms` mode builds a
+/// 0–59 minute wheel with no way to bound it; the ceiling here is 3:59, so the
+/// minute wheel has to stop at 3.
 ///
-/// The floor is enforced by snapping back rather than by withholding options.
-/// Letting a user spin to 0:05, silently saving 5s, and only then finding out
-/// is worse than a wheel that refuses to settle there: the setting is meant to
-/// be the user's expression of how much friction they want, so a value the app
-/// will not honour should not be selectable at all.
+/// The floor and ceiling are enforced by snapping the wheels back rather than
+/// by withholding options. Letting a user settle on 0:05 and only finding out
+/// on save is worse than a wheel that refuses to sit there — this setting is
+/// the user expressing how much friction they want, so a value the app will
+/// not honour should not be selectable at all.
 class _WaitDurationSheet extends StatefulWidget {
   final int initialSeconds;
   final VoidCallback onCancel;
@@ -866,15 +867,23 @@ class _WaitDurationSheetState extends State<_WaitDurationSheet> {
   static const int _floor = StorageService.minWaitSeconds;
   static const int _ceiling = StorageService.maxWaitSeconds;
 
-  late int _minutes;
-  late int _seconds;
+  /// CupertinoTimerPicker constants, mirrored so the two wheels in Settings
+  /// are visually identical. Changing these desynchronises the wait picker
+  /// from the Daily Time Limit picker next to it.
+  static const double _itemExtent = 32.0;
+  static const double _magnification = 34 / 32;
+  static const double _fontSize = 21.0;
+  static const double _labelFontSize = 17.0;
+  static const double _labelGap = 6.0;
 
+  int _minutes = 0;
+  int _seconds = 0;
   String? _warning;
 
-  /// Rebuilt whenever the selection is corrected, so the wheels jump back
-  /// rather than sitting on a value that was rejected.
-  late FixedExtentScrollController _minuteCtl;
-  late FixedExtentScrollController _secondCtl;
+  /// Re-created whenever a selection is rejected, so the wheels jump back
+  /// rather than resting on a value that was refused.
+  FixedExtentScrollController? _minuteCtl;
+  FixedExtentScrollController? _secondCtl;
 
   @override
   void initState() {
@@ -888,8 +897,8 @@ class _WaitDurationSheetState extends State<_WaitDurationSheet> {
 
   @override
   void dispose() {
-    _minuteCtl.dispose();
-    _secondCtl.dispose();
+    _minuteCtl?.dispose();
+    _secondCtl?.dispose();
     super.dispose();
   }
 
@@ -897,25 +906,16 @@ class _WaitDurationSheetState extends State<_WaitDurationSheet> {
 
   void _onWheelChanged() {
     final total = _total;
-    if (total < _floor) {
-      // Snap the offending wheel to the floor and say why. 0m30s is reachable
-      // from either wheel, so both are recomputed from the floored total.
-      final floored = _floor;
+    if (total < _floor || total > _ceiling) {
+      // Recompute both wheels from the corrected total, because e.g. 0m05 and
+      // 3m65 are both reachable and only one of them is the offending wheel.
+      final corrected = total < _floor ? _floor : _ceiling;
       setState(() {
-        _minutes = floored ~/ 60;
-        _seconds = floored % 60;
-        _warning = 'Minimum wait is 30 seconds';
-        _minuteCtl = FixedExtentScrollController(initialItem: _minutes);
-        _secondCtl = FixedExtentScrollController(initialItem: _seconds);
-      });
-      return;
-    }
-    if (total > _ceiling) {
-      final capped = _ceiling;
-      setState(() {
-        _minutes = capped ~/ 60;
-        _seconds = capped % 60;
-        _warning = 'Maximum wait is 3 minutes 59 seconds';
+        _minutes = corrected ~/ 60;
+        _seconds = corrected % 60;
+        _warning = total < _floor
+            ? 'Minimum wait is 30 seconds'
+            : 'Maximum wait is 3 minutes 59 seconds';
         _minuteCtl = FixedExtentScrollController(initialItem: _minutes);
         _secondCtl = FixedExtentScrollController(initialItem: _seconds);
       });
@@ -926,8 +926,22 @@ class _WaitDurationSheetState extends State<_WaitDurationSheet> {
 
   @override
   Widget build(BuildContext context) {
+    // The selected row's type is scaled the way the limit picker scales it.
+    final selectedStyle = TextStyle(
+      color: CupertinoTheme.of(context).primaryColor,
+      fontSize: _fontSize * _magnification,
+    );
+    final normalStyle = TextStyle(
+      color: CupertinoTheme.of(context).textTheme.pickerTextStyle.color ??
+          CupertinoColors.white,
+      fontSize: _fontSize * _magnification,
+    );
+    final mutedStyle = normalStyle.copyWith(
+      color: normalStyle.color!.withOpacity(0.5),
+    );
+
     return Container(
-      height: 360,
+      height: 340,
       decoration: const BoxDecoration(
         color: Color(0xFF1C1C1E),
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
@@ -935,7 +949,7 @@ class _WaitDurationSheetState extends State<_WaitDurationSheet> {
       child: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -956,18 +970,20 @@ class _WaitDurationSheetState extends State<_WaitDurationSheet> {
                       style: TextStyle(
                           color: Color(0xFF0A84FF),
                           fontWeight: FontWeight.bold)),
-                  onPressed: () => widget.onSave(_total.clamp(_floor, _ceiling)),
+                  onPressed: () =>
+                      widget.onSave(_total.clamp(_floor, _ceiling)),
                 ),
               ],
             ),
           ),
           const Divider(color: Colors.white12, height: 1),
-          const Text('How long you wait for bonus time',
+          const SizedBox(height: 4),
+          const Text('Wait Duration',
               style: TextStyle(color: Colors.white54, fontSize: 13)),
-          // Reserved height so the wheels do not jump when the warning
+          // Reserved height so the wheels do not shift when the message
           // appears and disappears.
           SizedBox(
-            height: 20,
+            height: 18,
             child: Center(
               child: _warning == null
                   ? null
@@ -979,8 +995,34 @@ class _WaitDurationSheetState extends State<_WaitDurationSheet> {
           Expanded(
             child: Row(
               children: [
-                Expanded(child: _wheel('min', _ceiling ~/ 60, _minutes, _minuteCtl)),
-                Expanded(child: _wheel('sec', 59, _seconds, _secondCtl)),
+                Expanded(
+                  child: _wheel(
+                    max: _ceiling ~/ 60,
+                    unit: 'min',
+                    value: _minutes,
+                    controller: _minuteCtl!,
+                    selectedStyle: selectedStyle,
+                    mutedStyle: mutedStyle,
+                    onChanged: (i) {
+                      _minutes = i;
+                      _onWheelChanged();
+                    },
+                  ),
+                ),
+                Expanded(
+                  child: _wheel(
+                    max: 59,
+                    unit: 'sec',
+                    value: _seconds,
+                    controller: _secondCtl!,
+                    selectedStyle: selectedStyle,
+                    mutedStyle: mutedStyle,
+                    onChanged: (i) {
+                      _seconds = i;
+                      _onWheelChanged();
+                    },
+                  ),
+                ),
               ],
             ),
           ),
@@ -989,29 +1031,37 @@ class _WaitDurationSheetState extends State<_WaitDurationSheet> {
     );
   }
 
-  Widget _wheel(
-    String label,
-    int max,
-    int value,
-    FixedExtentScrollController controller,
-  ) {
+  /// One number wheel with its unit label beside every entry, laid out the
+  /// way CupertinoTimerPicker does it — number, gap, unit — so "2 min" reads
+  /// correctly at every row rather than only on the selected one.
+  Widget _wheel({
+    required int max,
+    required String unit,
+    required int value,
+    required FixedExtentScrollController controller,
+    required TextStyle selectedStyle,
+    required TextStyle mutedStyle,
+    required ValueChanged<int> onChanged,
+  }) {
     return CupertinoPicker(
-      itemExtent: 40,
+      itemExtent: _itemExtent,
       scrollController: controller,
-      onSelectedItemChanged: (i) {
-        if (label == 'min') {
-          _minutes = i;
-        } else {
-          _seconds = i;
-        }
-        _onWheelChanged();
-      },
+      onSelectedItemChanged: onChanged,
       children: [
         for (int i = 0; i <= max; i++)
           Center(
-            child: Text(
-              i < 10 ? '0$i' : '$i',
-              style: const TextStyle(color: Colors.white, fontSize: 20),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
+              children: [
+                Text(i < 10 ? '0$i' : '$i',
+                    style: i == value ? selectedStyle : mutedStyle),
+                SizedBox(width: _labelGap),
+                Text(unit,
+                    style: (i == value ? selectedStyle : mutedStyle)
+                        .copyWith(fontSize: _labelFontSize)),
+              ],
             ),
           ),
       ],

@@ -166,6 +166,29 @@ void main() {
       expect(find.byType(CupertinoPicker), findsNWidgets(2));
     });
 
+    testWidgets('both wheels are labelled with their unit', (tester) async {
+      await openWaitPicker(tester);
+
+      // The bare numbers were ambiguous: 3 next to 59 reads as a pair rather
+      // than as a duration. Every row carries its unit, matching how the
+      // Daily Time Limit picker labels its hours and minutes.
+      expect(find.text('min'), findsWidgets);
+      expect(find.text('sec'), findsWidgets);
+    });
+
+    testWidgets('the wheels match the Daily Time Limit picker styling',
+        (tester) async {
+      await openWaitPicker(tester);
+
+      // Same item extent as CupertinoTimerPicker uses, so the two wheels in
+      // Settings line up row for row instead of looking like different
+      // controls.
+      final pickers = tester.widgetList<CupertinoPicker>(find.byType(CupertinoPicker));
+      for (final p in pickers) {
+        expect(p.itemExtent, 32.0);
+      }
+    });
+
     testWidgets('dragging the minute wheel past the end stops at 3 minutes',
         (tester) async {
       await StorageService().saveWaitSeconds(150);
