@@ -16,6 +16,20 @@ class UpdateInfo {
     required this.downloadUrl,
     required this.isAvailable,
   });
+
+  /// Direct link to the release APK.
+  ///
+  /// GitHub serves release assets from a fixed path derived from the tag, so
+  /// this is arithmetic rather than a second API call — which matters, because
+  /// the unauthenticated Releases API has a 60 requests/hour/IP budget that
+  /// this app has already had to work hard to stay inside. Asking for the
+  /// asset list to find one URL would spend a request per user per check.
+  ///
+  /// Empty when there is no update, so a caller cannot accidentally hand the
+  /// installer a link to the bare `v` tag.
+  String get apkUrl => isAvailable && latestVersion.isNotEmpty
+      ? 'https://github.com/EGBYtest/Unplug/releases/download/v$latestVersion/app-release.apk'
+      : '';
 }
 
 class UpdateChecker {

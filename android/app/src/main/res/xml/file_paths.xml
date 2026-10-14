@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Scope for FileProvider. Deliberately the narrowest thing that works: the
+  in-app updater downloads the APK into the app's own cache directory, and
+  nothing else needs a content:// URI. Granting more here would mean any
+  future caller could hand arbitrary parts of our storage to other apps.
+-->
+<paths>
+    <cache-path name="update_apk" path="." />
+</paths>

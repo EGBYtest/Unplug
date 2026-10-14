@@ -10,11 +10,15 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import android.content.pm.PackageManager
 import android.content.pm.ApplicationInfo
+import androidx.core.content.FileProvider
+import java.io.File
 
 class MainActivity : FlutterActivity() {
 
     private val CHANNEL = "app_closure"
+    private val APK_CHANNEL = "unplug/apk"
     private var channel: MethodChannel? = null
+    private var apkChannel: MethodChannel? = null
     private var pendingApp: String? = null
     private var pendingFeature: String? = null
     private var pendingSkipCountdown: Boolean = false
@@ -73,7 +77,71 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+
+        // In-app update install. Kept on its own channel because it is the only
+        // path that touches another package on disk, and mixing it with the
+        // lock-screen channel would mean every lockdown change had to be
+        // reasoned about against this code.
+        apkChannel = MethodChannel(engine.dartExecutor.binaryMessenger, APK_CHANNEL)
+        apkChannel?.setMethodCallHandler { call, result ->
+            when (call.method) {
+                "installApk" -> {
+                    val path = call.argument<String>("path")
+                    if (path.isNullOrEmpty()) { result.success(false); return@setMethodCallHandler }
+                    val file = File(path)
+                    if (!file.exists()) { result.success(false); return@setMethodCallHandler }
+                    // The per-app "allow from this source" grant cannot be
+                    // requested from here — Android only ever shows it from
+                    // Settings. Send the user there and report the failure, so
+                    // Dart can say something truthful instead of appearing to
+                    // have done nothing.
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+                        !packageManager.canRequestPackageInstalls()) {
+                        openInstallPermissionSettings()
+                        result.success(false)
+                        return@setMethodCallHandler
+                    }
+                    try {
+                        val uri = FileProvider.getUriForFile(
+                            this, "$packageName.fileprovider", file
+                        )
+                        val intent = Intent(Intent.ACTION_VIEW).apply {
+                            setDataAndType(uri, "application/vnd.android.package-archive")
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        startActivity(intent)
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.success(false)
+                    }
+                }
+                "openInstallPermissionSettings" -> {
+                    openInstallPermissionSettings()
+                    result.success(true)
+                }
+                else -> result.notImplemented()
+            }
+        }
         handleIntent(intent)
+    }
+
+    private fun openInstallPermissionSettings() {
+        try {
+            val intent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
+                data = android.net.Uri.parse("package:$packageName")
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            startActivity(intent)
+        } catch (_: Exception) {
+            // Some OEM builds ship without this screen. Fall back to the
+            // generic list rather than crashing; the user can still find it.
+            try {
+                startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                })
+            } catch (_: Exception) {}
+        }
     }
 
     override fun onResume() {

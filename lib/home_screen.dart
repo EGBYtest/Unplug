@@ -9,6 +9,7 @@ import 'services/app_closure_handler.dart';
 import 'services/usage_tracker.dart';
 import 'services/storage_service.dart';
 import 'services/update_checker.dart';
+import 'services/apk_downloader.dart';
 import 'models/app_group.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -29,6 +30,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   late List<AppGroup> _groups;
   UpdateInfo? _updateInfo;
   String? _dismissedVersion;
+
+  // In-app update state. null progress means "not downloading"; the banner
+  // otherwise has no way to tell a real download from the old "tap and hope"
+  // tap target, and a button that silently does nothing while bytes move is
+  // the thing users report as "it's stuck".
+  double? _downloadProgress;
+  String? _updateError;
+  bool _installHandedOff = false;
 
   @override
   void initState() {
@@ -422,15 +431,69 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
+  /// Opens the release page in the browser.
+  ///
+  /// This is the fallback, not the main path: every step of a browser upgrade
+  /// is a step where the user can get stuck, which is the problem the in-app
+  /// downloader exists to remove. It stays reachable because a download that
+  /// fails on a captive portal or a throttled connection should still leave a
+  /// way forward.
+  Future<void> _openReleasePage() async {
+    final url = _updateInfo?.downloadUrl;
+    if (url == null || url.isEmpty) return;
+    final uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  Future<void> _startUpdateDownload() async {
+    final info = _updateInfo;
+    if (info == null) return;
+    setState(() {
+      _downloadProgress = 0.0;
+      _updateError = null;
+      _installHandedOff = false;
+    });
+    try {
+      final file = await ApkDownloader.download(
+        info.apkUrl,
+        onProgress: (p) {
+          if (mounted) setState(() => _downloadProgress = p);
+        },
+      );
+      if (!mounted) return;
+      setState(() => _downloadProgress = null);
+      final handedOff = await ApkDownloader.install(file);
+      if (!mounted) return;
+      if (handedOff) {
+        setState(() => _installHandedOff = true);
+      } else {
+        // The install permission is not granted yet — MainActivity has already
+        // sent the user to the right settings screen. Say what happened rather
+        // than closing the dialog on them.
+        setState(() => _updateError =
+            'Turn on "Install unknown apps" for Unplug, then tap to finish updating.');
+      }
+    } on ApkDownloadException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _downloadProgress = null;
+        _updateError = e.message;
+      });
+    }
+  }
+
   Widget _buildUpdateBanner() {
+    final double? progress = _downloadProgress;
+    final bool downloading = progress != null;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
       child: GestureDetector(
-        onTap: () async {
-          final uri = Uri.parse(_updateInfo!.downloadUrl);
-          if (await canLaunchUrl(uri)) {
-            await launchUrl(uri, mode: LaunchMode.externalApplication);
-          }
+        onTap: () {
+          // A tap while bytes are moving must not start a second download.
+          if (downloading) return;
+          _startUpdateDownload();
         },
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -439,43 +502,83 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: const Color(0xFF0A84FF).withOpacity(0.3)),
           ),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: 36, height: 36,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF0A84FF).withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(CupertinoIcons.cloud_download_fill, color: Color(0xFF0A84FF), size: 18),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Update v${_updateInfo!.latestVersion} available',
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14),
+              Row(
+                children: [
+                  Container(
+                    width: 36, height: 36,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0A84FF).withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(10),
                     ),
-                    const SizedBox(height: 2),
-                    const Text('Tap to download', style: TextStyle(color: Colors.white38, fontSize: 12)),
-                  ],
-                ),
+                    child: const Icon(CupertinoIcons.cloud_download_fill, color: Color(0xFF0A84FF), size: 18),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Update v${_updateInfo!.latestVersion} available',
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          _bannerSubtitle(downloading),
+                          style: const TextStyle(color: Colors.white38, fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: () =>
+                        setState(() => _dismissedVersion = _updateInfo!.latestVersion),
+                    child: Container(
+                      padding: const EdgeInsets.all(6),
+                      child: const Icon(CupertinoIcons.clear_circled, color: Colors.white38, size: 18),
+                    ),
+                  ),
+                ],
               ),
-              GestureDetector(
-                onTap: () =>
-                    setState(() => _dismissedVersion = _updateInfo!.latestVersion),
-                child: Container(
-                  padding: const EdgeInsets.all(6),
-                  child: const Icon(CupertinoIcons.clear_circled, color: Colors.white38, size: 18),
+              if (downloading) ...[
+                const SizedBox(height: 10),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: progress,
+                    backgroundColor: Colors.white12,
+                    valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF0A84FF)),
+                  ),
                 ),
-              ),
+              ],
+              if (_updateError != null) ...[
+                const SizedBox(height: 10),
+                GestureDetector(
+                  onTap: _openReleasePage,
+                  child: Text(
+                    'Open the release page in your browser instead →',
+                    style: TextStyle(
+                      color: const Color(0xFF0A84FF).withOpacity(0.9),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
         ),
       ),
     );
+  }
+
+  String _bannerSubtitle(bool downloading) {
+    if (downloading) return 'Downloading… ${(_downloadProgress! * 100).round()}%';
+    if (_installHandedOff) return 'Confirm the install to finish';
+    if (_updateError != null) return 'Tap to try again';
+    return 'Tap to download and install';
   }
 
   Widget _buildStatCards() {

@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <strong>Version 2.0.2</strong> · Android 7.0+ · Free · No accounts
+  <strong>Version 2.1.0</strong> · Android 7.0+ · Free · No accounts
 </p>
 
 ---
@@ -38,7 +38,7 @@ There's no Play Store listing. Get the APK from the
 [releases page](https://github.com/EGBYtest/Unplug/releases/latest) and install it.
 
 - Android 7.0 or newer
-- ~48 MB
+- ~49 MB
 - You'll need to allow your browser to "install unknown apps"
 
 **Your phone will warn you. That's expected, and it's about the app, not you.** Google Play Protect flags any app it hasn't seen before — Unplug is new and has almost no installs, so it has no reputation with Google. The warning means *"I don't know this app"*, **not** *"I found something bad"*.
@@ -56,6 +56,8 @@ When you open it, it asks for three things. Here's what each one actually does:
 Android shows a genuinely alarming warning when you enable an accessibility service — *"can read all screen content and perform actions"*. It shows that exact text for every accessibility app ever made, including screen readers and password managers. Unplug uses it to see which app is open and to press Back. It does not record your screen, read your keystrokes, or send content anywhere. There's no server to send it to.
 
 You can revoke all three, any time, in Android Settings.
+
+**One more, later:** on your first in-app update the phone will offer Unplug permission to *"install unknown apps"*. Unplug asks for that only when you tap an update, never at setup, and uses it for exactly one thing — installing the next version of itself, which you confirm in Android's own installer. It cannot install anything else, and it won't ask again once you've decided.
 
 ---
 
@@ -130,22 +132,29 @@ It's on your phone. That's the whole story, but concretely:
 
 - Groups, limits, usage history and bonus time live in local storage on the device
 - Enforcement runs entirely on-device and reads those same local values
-- **The only network request the app ever makes** is checking GitHub for a newer version
+- **The only things it ever fetches** are the GitHub Releases API and the raw `VERSION` file, to check whether a newer version exists — and, once, the release APK itself when you tap the update banner. Nothing about your usage, your groups, or you is ever in any of those requests.
 - No accounts, no analytics, no crash reporting, no tracking
 
-If you don't believe that, it's searchable: grep the repo for `HttpClient`, `http`, and `WebView` and follow every call. There's one file that does network I/O and it does one thing.
+If you don't believe that, it's searchable: grep the repo for `HttpClient`, `http`, and `WebView` and follow every call. There are two files that do network I/O — one checks for a new version, one downloads it — and neither sends anything outward.
 
 ---
 
 ## Updating
 
-Unplug checks for new versions on its own. When there's one, a blue banner appears on the dashboard — tap it and the release page opens in your browser.
+Unplug checks for new versions on its own. When there's one, a blue banner appears on the dashboard.
+
+Tap it and Unplug downloads the APK itself and hands it to Android's installer. You stay in the app, confirm the install, and that's it — no browser, no release page, no hunting through a file manager.
+
+The first time you do this, Android will ask permission for Unplug to install apps. That's the one permission this release adds. Grant it once, from the screen it sends you to, and every later update is a single tap.
+
+If the download fails — bad connection, captive wifi, the release pulled — the banner says so and offers to open the release page in your browser instead. The old way still works; it's just no longer the way.
 
 The banner only shows when there's genuinely something newer, and you can dismiss it. It comes back for the next release.
 
 <details>
 <summary><strong>If updates aren't appearing</strong></summary>
 
+- **On v2.0.2 or older:** those builds send you to the browser instead of downloading in-app. Everything still works, it's just the longer route.
 - **On v1.1.7 or older:** those builds are missing a permission they need to reach the network at all. They can't detect any update, including the one that fixes it. Download the latest release by hand.
 - **On v1.1.9:** also by hand. That release is a pre-release, and pre-releases aren't offered to anyone.
 - **Otherwise:** the check is throttled to once every 30 minutes, and a fresh app start always checks straight away. Force-close and reopen, then give it a few seconds.
