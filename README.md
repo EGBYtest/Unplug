@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <strong>Version 2.0.1</strong> · Android 7.0+ · Free · No accounts
+  <strong>Version 2.0.2</strong> · Android 7.0+ · Free · No accounts
 </p>
 
 ---

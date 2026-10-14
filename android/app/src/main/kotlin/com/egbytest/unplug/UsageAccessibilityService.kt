@@ -170,6 +170,7 @@ class UsageAccessibilityService : AccessibilityService() {
                 blockApp(pkg, groupName)
             } else {
                 Log.i(TAG, "ok $pkg ($groupName): ${usedMinutes}m / ${totalLimit}m (bonus=${bonusSecondsFor(groupName, prefs)}s, resetHour=${prefs.getFlutterInt("flutter.reset_hour", 2)})")
+                armDeadline(groupName, limit, usedMinutes, totalLimit)
             }
             return
         }
@@ -455,6 +456,65 @@ class UsageAccessibilityService : AccessibilityService() {
     private var recheckGroup = ""
     private var recheckFeature = ""
     private var recheckKeywords: List<String>? = null
+
+    // ─── Limit deadline ───────────────────────────────────────────
+    //
+    // Enforcement otherwise only ever runs when an accessibility
+    // event arrives, so a user who sits still with a restricted app
+    // open is never checked: they stay in the app past the limit and
+    // are released only when they next touch the screen, which can be
+    // minutes later. This arms a single one-shot re-check for the
+    // moment the remaining time is up, so the block lands on the
+    // clock instead of on the next tap. The check reuses
+    // enforceVisiblePackages(), which already sweeps visible windows
+    // and escalates through blockApp().
+    //
+    // This is a deadline, not a poll — one usage query per remaining
+    // window — so it costs nothing measurable in battery. Every
+    // passing check re-arms it from the fresh reading, so a changed
+    // limit or bonus credit moves the deadline with it.
+    //
+    // It deliberately does not use recheckHandler: that one is torn
+    // down wholesale on every feature block, which would silently
+    // cancel an armed limit deadline.
+
+    private val deadlineHandler = Handler(Looper.getMainLooper())
+    private var deadlineGroup = ""
+    private var deadlineLimit = 0
+
+    private fun armDeadline(group: String, limit: Int, usedMinutes: Int, totalLimit: Int) {
+        val remainingSec = (totalLimit - usedMinutes) * 60L
+        deadlineHandler.removeCallbacks(deadlineCheck)
+        if (remainingSec <= 0L) return
+        deadlineGroup = group
+        deadlineLimit = limit
+        deadlineHandler.postDelayed(deadlineCheck, remainingSec)
+        Log.i(TAG, "deadline armed for $group in ${remainingSec / 60}m ($usedMinutes/$totalLimit)")
+    }
+
+    private val deadlineCheck = object : Runnable {
+        override fun run() {
+            val group = deadlineGroup
+            if (group.isEmpty()) return
+            try {
+                val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+                val used = groupUsageMinutes(group, prefs)
+                val total = effectiveLimitMinutes(group, deadlineLimit, used, prefs)
+                if (total == 0 || used >= total) {
+                    Log.i(TAG, "deadline hit for $group: ${used}m >= ${total}m — sweeping visible windows")
+                    enforceVisiblePackages()
+                } else {
+                    // Android's counter can still trail reality, so the
+                    // limit may not have crossed yet. Re-arm rather than
+                    // giving up, or the user walks past the deadline.
+                    Log.i(TAG, "deadline early for $group: ${used}m / ${total}m — re-arming")
+                    armDeadline(group, deadlineLimit, used, total)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "deadline check failed", e)
+            }
+        }
+    }
 
     private fun scheduleFeatureRecheck(pkg: String, keywords: List<String>, group: String, feature: String) {
         recheckHandler.removeCallbacksAndMessages(null)
@@ -937,6 +997,7 @@ class UsageAccessibilityService : AccessibilityService() {
 
     override fun onDestroy() {
         recheckHandler.removeCallbacksAndMessages(null)
+        deadlineHandler.removeCallbacksAndMessages(null)
         removeOverlay()
         super.onDestroy()
     }

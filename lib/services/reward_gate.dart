@@ -82,6 +82,13 @@ class _WaitDialogState extends State<_WaitDialog> with WidgetsBindingObserver {
   AppLifecycleState _lifecycleState = AppLifecycleState.resumed;
   Size? _fullSize;
 
+  static String _formatSeconds(int totalSeconds) {
+    if (totalSeconds < 60) return '${totalSeconds}s';
+    final m = totalSeconds ~/ 60;
+    final s = totalSeconds % 60;
+    return s == 0 ? '${m}m' : '${m}m ${s}s';
+  }
+
   @override
   void initState() {
     super.initState();
@@ -204,7 +211,7 @@ class _WaitDialogState extends State<_WaitDialog> with WidgetsBindingObserver {
             Text(
               _paused
                   ? 'Paused — timer resets when Unplug is fully open'
-                  : 'Wait ${_remaining}s for +time',
+                  : 'Wait ${_formatSeconds(_remaining)} for +time',
               style: const TextStyle(fontSize: 13, color: Colors.white54),
             ),
             const SizedBox(height: 8),

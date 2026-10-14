@@ -216,12 +216,12 @@ class _LockScreenPopupState extends State<LockScreenPopup> {
                             borderRadius: BorderRadius.circular(12),
                             padding: const EdgeInsets.symmetric(vertical: 14),
                             onPressed: _waitForBonus,
-                            child: const Row(
+                            child: Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: <Widget>[
-                                Icon(CupertinoIcons.clock_fill, color: Colors.white, size: 18),
-                                SizedBox(width: 8),
-                                Text('Wait 30s  (+time)', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                                const Icon(CupertinoIcons.clock_fill, color: Colors.white, size: 18),
+                                const SizedBox(width: 8),
+                                Text('Wait ${_fmtSeconds(_storage.waitSeconds)}  (+time)', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                               ],
                             ),
                           ),
