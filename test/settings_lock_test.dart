@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:unplug/models/app_group.dart';
 import 'package:unplug/services/storage_service.dart';
 import 'package:unplug/settings_screen.dart';
 
@@ -73,6 +74,124 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(StorageService().settingsLockEnabled, isTrue);
+  });
+
+  group('the two interstitials gate the direction that adds friction', () {
+    // Turning the open gate or the break reminder ON is the one action here
+    // that changes what happens later, unprompted, while the user is not
+    // present to see it — so it costs the challenge. Turning one OFF must
+    // stay free, or the setting cannot be undone without a hurdle, and
+    // changing the interval of a reminder that is already running is tuning
+    // something already asked for, not a new commitment.
+
+    /// Both features live behind a group's action sheet, and the sheet also
+    /// holds "Edit Time Limit", so the row is targeted by its own label.
+    Finder groupRow(String label) => find.text(label).first;
+
+    Future<void> openFirstGroupSheet(WidgetTester tester) async {
+      await openSettings(tester);
+      await tester.tap(find.text('Social Media').first);
+      await tester.pumpAndSettle();
+    }
+
+    /// The settings screen behind the sheet has its own Save button, so the
+    /// sheet's is targeted by the blue one — the screen's is green.
+    Finder sheetSave() => find.widgetWithText(
+          CupertinoButton,
+          'Save',
+        ).last;
+
+    testWidgets('turning the open gate ON is gated', (tester) async {
+      await StorageService().setSettingsLockEnabled(true);
+      await openFirstGroupSheet(tester);
+
+      await tester.tap(groupRow('Open Gate: Off'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Confirm Change'), findsOneWidget);
+      expect(
+        StorageService().loadGroups().first.openGateEnabled,
+        isFalse,
+        reason: 'the gate must not switch on before the challenge is met',
+      );
+    });
+
+    testWidgets('turning the open gate OFF needs no challenge',
+        (tester) async {
+      await StorageService().setSettingsLockEnabled(true);
+      await StorageService().saveGroups([
+        AppGroup(
+          name: 'Social Media',
+          packageNames: const ['com.instagram.android'],
+          timeLimitMinutes: 30,
+          openGateEnabled: true,
+        ),
+      ]);
+      await openFirstGroupSheet(tester);
+
+      await tester.tap(groupRow('Open Gate: On'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Confirm Change'), findsNothing);
+      expect(
+        StorageService().loadGroups().first.openGateEnabled,
+        isFalse,
+        reason: 'disabling must not be something you need a hurdle to undo',
+      );
+    });
+
+    testWidgets('turning the break reminder ON is gated', (tester) async {
+      await StorageService().setSettingsLockEnabled(true);
+      await openFirstGroupSheet(tester);
+
+      await tester.tap(groupRow('Break Reminder: Off'));
+      await tester.pumpAndSettle();
+
+      // The sheet itself opens freely — the challenge is for saving it on.
+      expect(find.text('Break Reminder'), findsOneWidget);
+      await tester.tap(find.byType(CupertinoSwitch).last);
+      await tester.pumpAndSettle();
+      await tester.tap(sheetSave());
+      await tester.pumpAndSettle();
+
+      expect(find.text('Confirm Change'), findsOneWidget);
+      expect(
+        StorageService().loadGroups().first.breakReminderEnabled,
+        isFalse,
+      );
+    });
+
+    testWidgets('changing the interval of a running reminder is free',
+        (tester) async {
+      await StorageService().setSettingsLockEnabled(true);
+      await StorageService().saveGroups([
+        AppGroup(
+          name: 'Social Media',
+          packageNames: const ['com.instagram.android'],
+          timeLimitMinutes: 30,
+          breakReminderEnabled: true,
+          breakReminderMinutes: 10,
+        ),
+      ]);
+      await openFirstGroupSheet(tester);
+
+      await tester.tap(groupRow('Break Reminder: On (10m)'));
+      await tester.pumpAndSettle();
+
+      // Scroll the minute wheel off 10 and save.
+      await tester.drag(find.byType(CupertinoPicker).last, const Offset(0, -40));
+      await tester.pumpAndSettle();
+      await tester.tap(sheetSave());
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('Confirm Change'),
+        findsNothing,
+        reason: 'tuning an already-on reminder must not re-open the challenge',
+      );
+      expect(StorageService().loadGroups().first.breakReminderMinutes,
+          isNot(10));
+    });
   });
 
   group('reward per wait is capped', () {

@@ -395,9 +395,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
 // Both are per-group toggles rather than global ones because the right answer
 // differs by what is in the group: gating a messaging app on every entry is
 // reasonable, gating a two-tap calculator app is not, and one global switch
-// cannot say that. Turning one ON is free (asking for friction is not a way
-// around the lock) but turning it OFF costs the same challenge as any other
-// setting, because that is the direction that needs the user's attention.
+// cannot say that.
+//
+// The challenge is on the direction that adds friction, not the one that
+// removes it:
+//
+//   turning ON   → challenge. Switching a reminder on is the one action here
+//                  that changes what happens unprompted, later, without the
+//                  user present for it. It deserves the same pause as any
+//                  other change to how the limiter behaves.
+//   turning OFF  → free. Requiring a challenge to disable something is a
+//                  setting you cannot get out of, which is the opposite of
+//                  what the lock is for.
+//   changing the interval → free, once the reminder is already on. Tuning how
+//                  long a thing you already asked for should last is not a new
+//                  commitment, and gating it would make the setting harder to
+//                  use than it is worth.
 
 Future<void> _setOpenGate(int index, bool value) async {
     setState(() {
@@ -406,41 +419,45 @@ Future<void> _setOpenGate(int index, bool value) async {
     await _storage.saveGroups(_groups);
   }
 
-Future<void> _editBreakReminder(int index) async {
-    final group = _groups[index];
-    await _showBreakReminderSheet(index);
-  }
-
-Future<void> _showBreakReminderSheet(int index) async {
-    final group = _groups[index];
-    await showCupertinoModalPopup<void>(
-      context: context,
-      builder: (popupContext) => _BreakReminderSheet(
-        initialEnabled: group.breakReminderEnabled,
-        initialMinutes: group.breakReminderMinutes,
-        onCancel: () => Navigator.pop(popupContext),
-        onSave: (enabled, minutes) async {
-          setState(() {
-            group.breakReminderEnabled = enabled;
-            group.breakReminderMinutes = minutes;
-          });
-          await _storage.saveGroups(_groups);
-          // The popup's own context is unmounted by the time an await returns,
-          // so this checks the State's context rather than the captured one.
-          if (!mounted) return;
-          Navigator.pop(popupContext);
-        },
-      ),
-    );
-  }
-
 Future<void> _editOpenGate(int index) async {
     final turningOn = !_groups[index].openGateEnabled;
-    // Same asymmetry as Settings Lock: enabling is free, disabling is not.
     if (turningOn) {
-      await _setOpenGate(index, true);
+      _confirmChange(() => _setOpenGate(index, true));
     } else {
-      _confirmChange(() => _setOpenGate(index, false));
+      await _setOpenGate(index, false);
+    }
+  }
+
+Future<void> _editBreakReminder(int index) async {
+    final group = _groups[index];
+    final wasEnabled = group.breakReminderEnabled;
+
+    final result = await showCupertinoModalPopup<_BreakReminderResult>(
+      context: context,
+      builder: (popupContext) => _BreakReminderSheet(
+        initialEnabled: wasEnabled,
+        initialMinutes: group.breakReminderMinutes,
+        onCancel: () => Navigator.pop(popupContext),
+        onSave: (enabled, minutes) =>
+            Navigator.pop(popupContext, _BreakReminderResult(enabled, minutes)),
+      ),
+    );
+    if (result == null) return;
+
+    final apply = () async {
+      setState(() {
+        group.breakReminderEnabled = result.enabled;
+        group.breakReminderMinutes = result.minutes;
+      });
+      await _storage.saveGroups(_groups);
+    };
+
+    // Only the off→on transition is gated. Turning it off, or moving the
+    // interval of a reminder that is already running, both apply directly.
+    if (result.enabled && !wasEnabled) {
+      _confirmChange(apply);
+    } else {
+      await apply();
     }
   }
 
@@ -729,16 +746,20 @@ final bonusSeconds = _storage.remainingBonusSeconds(
           CupertinoActionSheetAction(child: const Text('Edit Apps in Group'), onPressed: () { Navigator.pop(context); _confirmChange(() => _editGroupApps(index)); }),
           CupertinoActionSheetAction(
             child: Text('Break Reminder: ${group.breakReminderEnabled ? "On (${group.breakReminderMinutes}m)" : "Off"}'),
+            // Not wrapped in _confirmChange: whether this costs a challenge
+            // depends on which way the switch is going, which is only known
+            // inside. Gating entry would charge for turning it off and for
+            // adjusting the interval as well as for turning it on.
             onPressed: () {
               Navigator.pop(context);
-              _confirmChange(() => _editBreakReminder(index));
+              _editBreakReminder(index);
             },
           ),
           CupertinoActionSheetAction(
             child: Text('Open Gate: ${group.openGateEnabled ? "On" : "Off"}'),
             onPressed: () {
               Navigator.pop(context);
-              _confirmChange(() => _editOpenGate(index));
+              _editOpenGate(index);
             },
           ),
           if (bonusSeconds > 0)
@@ -1157,6 +1178,18 @@ class _WaitDurationSheetState extends State<_WaitDurationSheet> {
   }
 }
 
+/// What the break reminder sheet returns.
+///
+/// A named type rather than two positional values because the save handler has
+/// to distinguish "off" from "on with an unchanged interval", and reading that
+/// off a bare `(true, 10)` is guesswork.
+class _BreakReminderResult {
+  final bool enabled;
+  final int minutes;
+
+  const _BreakReminderResult(this.enabled, this.minutes);
+}
+
 /// Sets the per-group break reminder: whether it is on, and how long
 /// continuous use has to last before it asks.
 ///
@@ -1168,6 +1201,10 @@ class _BreakReminderSheet extends StatefulWidget {
   final bool initialEnabled;
   final int initialMinutes;
   final VoidCallback onCancel;
+
+  /// Returns the requested values and closes. Whether the change costs a
+  /// challenge is decided by the caller, which is the only place that knows
+  /// whether the reminder was already on.
   final void Function(bool enabled, int minutes) onSave;
 
   const _BreakReminderSheet({
