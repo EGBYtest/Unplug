@@ -397,24 +397,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
 // reasonable, gating a two-tap calculator app is not, and one global switch
 // cannot say that.
 //
-// The challenge is on the direction that adds friction, not the one that
-// removes it:
-// The two are not symmetric with each other, and the difference is that one
-// of them has an interval to weaken.
+// The challenge is on the direction that REMOVES friction. This matches the
+// in-app tab blockers, which is the precedent: switching Snapchat Spotlight
+// on is free, switching it off asks the challenge. Both are the same trade —
+// switching something on is you arming a guard on yourself, and asking a
+// price for that is a setting you cannot arm without permission.
 //
-//   Open gate — one gated transition, turning it on. It has no other tunable
-//   value, so that is the whole story: on costs a challenge, off is free.
-//
-//   Break reminder — two gated actions, because it has two things worth
-//   weakening. Turning it on costs a challenge, and so does retuning the
-//   interval of one that is already running: the number is how long the app
-//   can be used before it interrupts, so moving it is weakening the thing
-//   the setting exists to do. Choosing the interval in the same pass that
-//   switches it on is part of that one commitment, not a second one.
-//
-// Turning either OFF is always free. Requiring a challenge to disable
-// something makes it a setting you cannot get out of, which is the opposite
-// of what the lock is for.
+//   turning ON            free, for both. Including choosing the break
+//                         reminder's interval in the same pass that switches
+//                         it on: that is part of arming it, not a separate
+//                         loosening.
+//   turning OFF           challenge, for both. This is the direction that
+//                         takes the guard away.
+//   retuning the interval → challenge, while the reminder is already on. It
+//                         has no off state to move, so it is the one action
+//                         here that loosens a live setting without turning it
+//                         off — the number is how long the app can be used
+//                         before it interrupts, and moving it is weakening the
+//                         thing the setting exists to do.
 
 Future<void> _setOpenGate(int index, bool value) async {
     setState(() {
@@ -426,9 +426,9 @@ Future<void> _setOpenGate(int index, bool value) async {
 Future<void> _editOpenGate(int index) async {
     final turningOn = !_groups[index].openGateEnabled;
     if (turningOn) {
-      _confirmChange(() => _setOpenGate(index, true));
+      await _setOpenGate(index, true);
     } else {
-      await _setOpenGate(index, false);
+      _confirmChange(() => _setOpenGate(index, false));
     }
   }
 
@@ -463,23 +463,15 @@ Future<void> _editBreakReminder(int index) async {
       return;
     }
 
-    // Turning off is always free.
-    if (!result.enabled) {
+    // Switching it on is free, and so is picking the interval in the same
+    // pass: that is arming the guard, not weakening it.
+    if (!wasEnabled && result.enabled) {
       await apply();
       return;
     }
 
-    // Reminder is on, or is being switched on. Two distinct gated actions:
-    //
-    //   off → on        the initial commitment, and choosing the interval as
-    //                   part of it is part of that same commitment — one
-    //                   challenge covers the whole thing
-    //   on → on, moved  a live reminder being retuned. Same reasoning as
-    //                   turning it on: the delay before it interrupts is the
-    //                   thing being weakened, so it costs the same pause.
-    //
-    // The open gate deliberately does not share this: it has no interval to
-    // retune, so it is gated on exactly one transition and nothing else.
+    // Everything else loosens something: turning it off, or moving the
+    // interval of one that is already running. Both ask.
     _confirmChange(apply);
   }
 
@@ -554,7 +546,13 @@ final bonusSeconds = _storage.remainingBonusSeconds(
                   backgroundColor: const Color(0xFF1C1C1E),
                   leading: const Icon(CupertinoIcons.add_circled, color: Color(0xFF0A84FF), size: 22),
                   title: const Text('Add Group', style: TextStyle(color: Colors.white)),
-                  onTap: () => _confirmChange(_addGroup),
+                  // No challenge, and this one is not a slip: creating a group
+                  // only arms a limit, it cannot loosen an existing one. A new
+                  // group starts at the default limit with both interstitials
+                  // off, so there is nothing here to weaken — charging for it
+                  // made the common first-run path cost a wait to opt into a
+                  // stricter setup.
+                  onTap: _addGroup,
                 ),
 
                 // ── In-App Tab Blockers ──

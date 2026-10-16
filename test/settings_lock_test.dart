@@ -76,16 +76,14 @@ void main() {
     expect(StorageService().settingsLockEnabled, isTrue);
   });
 
-  group('the two interstitials gate the direction that adds friction', () {
-    // Not symmetric with each other, and the reason is that only the break
-    // reminder has an interval to weaken.
+  group('the two interstitials gate the direction that removes friction', () {
+    // Matches the in-app tab blockers, which is the precedent: Snapchat
+    // Spotlight switches on free and asks a challenge to switch off.
     //
-    // Open gate: one gated transition (turning it on) and nothing else.
-    // Break reminder: turning it on AND retuning the interval of one that is
-    // already running. The number is how long the app can be used before it
-    // interrupts, so moving it weakens what the setting is for.
-    //
-    // Turning either off stays free in both cases.
+    // Both: on free, off challenged.
+    // Break reminder only: retuning the interval of one that is already on
+    // is challenged too, since it loosens a live setting without turning it
+    // off.
 
     /// Both features live behind a group's action sheet, and the sheet also
     /// holds "Edit Time Limit", so the row is targeted by its own label.
@@ -104,23 +102,23 @@ void main() {
           'Save',
         ).last;
 
-    testWidgets('turning the open gate ON is gated', (tester) async {
+    testWidgets('turning the open gate ON is free', (tester) async {
       await StorageService().setSettingsLockEnabled(true);
       await openFirstGroupSheet(tester);
 
       await tester.tap(groupRow('Open Gate: Off'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Confirm Change'), findsOneWidget);
+      expect(find.text('Confirm Change'), findsNothing);
       expect(
         StorageService().loadGroups().first.openGateEnabled,
-        isFalse,
-        reason: 'the gate must not switch on before the challenge is met',
+        isTrue,
+        reason: 'arming a guard on yourself must not cost a wait, same as the '
+            'in-app tab blockers',
       );
     });
 
-    testWidgets('turning the open gate OFF needs no challenge',
-        (tester) async {
+    testWidgets('turning the open gate OFF is gated', (tester) async {
       await StorageService().setSettingsLockEnabled(true);
       await StorageService().saveGroups([
         AppGroup(
@@ -135,33 +133,28 @@ void main() {
       await tester.tap(groupRow('Open Gate: On'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Confirm Change'), findsNothing);
+      expect(find.text('Confirm Change'), findsOneWidget);
       expect(
         StorageService().loadGroups().first.openGateEnabled,
-        isFalse,
-        reason: 'disabling must not be something you need a hurdle to undo',
+        isTrue,
+        reason: 'the gate must not drop before the challenge is met',
       );
     });
 
-    testWidgets('turning the break reminder ON is gated', (tester) async {
+    testWidgets('turning the break reminder ON is free', (tester) async {
       await StorageService().setSettingsLockEnabled(true);
       await openFirstGroupSheet(tester);
 
       await tester.tap(groupRow('Break Reminder: Off'));
       await tester.pumpAndSettle();
-
-      // The sheet itself opens freely — the challenge is for saving it on.
       expect(find.text('Break Reminder'), findsOneWidget);
       await tester.tap(find.byType(CupertinoSwitch).last);
       await tester.pumpAndSettle();
       await tester.tap(sheetSave());
       await tester.pumpAndSettle();
 
-      expect(find.text('Confirm Change'), findsOneWidget);
-      expect(
-        StorageService().loadGroups().first.breakReminderEnabled,
-        isFalse,
-      );
+      expect(find.text('Confirm Change'), findsNothing);
+      expect(StorageService().loadGroups().first.breakReminderEnabled, isTrue);
     });
 
     testWidgets('retuning a running reminder is gated', (tester) async {
@@ -224,9 +217,8 @@ void main() {
       expect(StorageService().loadGroups().first.breakReminderMinutes, equals(10));
     });
 
-    // Turning it off must not ask for the interval either, or disabling
-    // becomes conditional on a second setting.
-    testWidgets('turning the break reminder OFF is free', (tester) async {
+    // Turning it off is the direction that removes the guard, so it asks.
+    testWidgets('turning the break reminder OFF is gated', (tester) async {
       await StorageService().setSettingsLockEnabled(true);
       await StorageService().saveGroups([
         AppGroup(
@@ -246,29 +238,26 @@ void main() {
       await tester.tap(sheetSave());
       await tester.pumpAndSettle();
 
-      expect(find.text('Confirm Change'), findsNothing);
-      expect(StorageService().loadGroups().first.breakReminderEnabled, isFalse);
+      expect(find.text('Confirm Change'), findsOneWidget);
+      expect(
+        StorageService().loadGroups().first.breakReminderEnabled,
+        isTrue,
+        reason: 'the reminder must not drop before the challenge is met',
+      );
     });
 
-    // The open gate has no interval, so it must never ask for a second
-    // challenge — there is nothing left to change after switching it on.
-    testWidgets('the open gate never asks more than once', (tester) async {
+    // Creating a group only arms a limit — it starts with both interstitials
+    // off and the default limit, so it cannot loosen anything. Charging for it
+    // put a wait on the ordinary first-run path.
+    testWidgets('creating a group needs no challenge', (tester) async {
       await StorageService().setSettingsLockEnabled(true);
-      await StorageService().saveGroups([
-        AppGroup(
-          name: 'Social Media',
-          packageNames: const ['com.instagram.android'],
-          timeLimitMinutes: 30,
-          openGateEnabled: true,
-        ),
-      ]);
-      await openFirstGroupSheet(tester);
+      await openSettings(tester);
 
-      await tester.tap(groupRow('Open Gate: On'));
+      await tester.tap(find.text('Add Group'));
       await tester.pumpAndSettle();
 
       expect(find.text('Confirm Change'), findsNothing);
-      expect(StorageService().loadGroups().first.openGateEnabled, isFalse);
+      expect(find.text('New Group'), findsOneWidget);
     });
   });
 

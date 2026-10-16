@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <strong>Version 2.2.2</strong> · Android 7.0+ · Free · No accounts
+  <strong>Version 2.2.3</strong> · Android 7.0+ · Free · No accounts
 </p>
 
 ---
@@ -89,9 +89,11 @@ Both are **off by default** and both are set **per group**, so you can gate a me
 
 Both work the same way the lock screen does: a real system-level overlay, drawn over everything including the launcher. And both lose to the time limit — if you're out, you get the lock screen, not a gentler version of it.
 
-Turning one **on** asks the same challenge as any other settings change — it's the one action here that changes what happens later, unprompted, while you're not there to see it. **Turning one off is always free**, because a setting you can't undo without a hurdle isn't a setting.
+Switching one **on** is free — same as the tab blockers, where turning Snapchat Spotlight on never asks anything. You're arming a guard on yourself, and that shouldn't cost you a wait. Switching one **off** asks the challenge, because that's the direction that takes the guard away.
 
-The **break reminder** asks once more, and this is the only difference between the two: it's the one with a number to weaken. The interval is how long you can use the app before it interrupts, so changing it on a reminder that's already running costs the same pause as turning it on did. Choosing the interval in the same pass that switches it on is part of that one commitment, not a second one. The **open gate** has no interval, so it only ever asks once.
+The **break reminder** asks in one more case. Its interval is how long you can use the app before it interrupts, so changing that on a reminder that's already running asks the challenge too — it's the one action here that loosens a live setting without turning it off. Choosing the interval in the same pass that switches it on stays free, since that's part of arming it.
+
+Creating a group is free as well. A new group starts at the default limit with both of these off, so it can't loosen anything.
 
 ---
 
