@@ -50,14 +50,35 @@ git ls-remote --tags origin | grep -E 'refs/tags/v2'
 `MAJOR.MINOR.PATCH`, and the two lower numbers mean different things:
 
 - **MAJOR** — a breaking change to how the app behaves or is configured.
-- **MINOR** — small changes, bug fixes, security patches. Bumping the second
-  number is the owner's call: it means a run of pre-releases has been tested
-  and declared good enough to ship.
-- **PATCH** — a live pre-release. Always published with `--prerelease`, always
-  something the owner still needs to try on a device.
+- **MINOR** — a breaking-ish or notable change.
+- **PATCH** — everything else: fixes, small changes, security patches.
 
-So a change goes out as `v2.0.1` (pre-release, test it), and when the owner
-says it is good enough, the shipped release becomes `v2.1.0`.
+**Which number a change gets is the owner's call.** Nothing here is
+mechanical. There is no rule that ties a release to a particular digit.
+
+### Pre-releases are marked `(beta)` in the name
+
+A release is a pre-release **iff `(beta)` appears in its name**. Tag
+`v2.0.2-beta`, title `v2.0.2 (beta)`. It is always something the owner still
+needs to try on a device.
+
+Anything without `(beta)` is a shipped release.
+
+When cutting a pre-release, also pass `--prerelease` to `gh release create`:
+
+```bash
+gh release create v2.0.2-beta app-release.apk --prerelease \
+  --title "v2.0.2 (beta) — <what changed>"
+```
+
+That flag is what keeps GitHub's `releases/latest` endpoint from pointing at
+it. The name is what a human reads. Both are needed; neither does the other's
+job.
+
+Note that `VERSION`, the `pubspec.yaml` version line, and the generated
+`app_version.dart` carry the bare `2.0.2`, without `-beta` — a pre-release is
+a distribution label, not a different build. Keep it that way or the version
+comparison in the update checker will see a string it cannot parse.
 
 ### The minor number must climb, never dip
 
@@ -79,9 +100,9 @@ the in-app checker reads. A pre-release is never offered to anyone, however
 new its number is. This is not a comparison failure — the checker simply never
 learns the release exists.
 
-So while `v2.0.1` is a pre-release, users still see `v2.0.0`. Intended:
-pre-release users install by hand, and everyone else is not offered something
-unfinished.
+So while `v2.0.2-beta` is out, users still see the last shipped release.
+Intended: pre-release users install by hand, and everyone else is not offered
+something unfinished.
 
 Check what the checker will actually see:
 
@@ -111,6 +132,33 @@ Checklist before tagging:
 
 `releases/latest` is what the in-app update checker reads, so the tag is the
 user-visible version. If the README and the tag disagree, the README is wrong.
+
+### Changes to the native limiter have to be run on a device
+
+The checklist above is all things a machine can check. It is not enough on its
+own for anything touching `UsageAccessibilityService`, because that code has no
+test harness at all and a plausible-looking diff can still be wrong in a way no
+analyzer sees.
+
+v2.0.2 and v2.1.0 both shipped broken enforcement from exactly that: a
+`Handler.postDelayed` call given seconds where milliseconds were expected. A
+17-minute deadline armed at 1020ms, which became a self-rearming once-a-second
+loop doing a synchronous usage query on the very looper accessibility events
+are delivered on. The app stopped blocking anything. `flutter analyze` was
+clean, all 88 tests passed, and the diff looked fine.
+
+So: **install the APK on a real device and watch `adb logcat -s UsageService`**
+before tagging any change to the limiter. The log already prints every
+enforcement decision, and this bug was obvious in the first sixty lines of it.
+For a periodic or timed behaviour specifically, watch the *intervals* — the
+message said "17m" while the lines arrived once a second, and that mismatch is
+the entire bug.
+
+Also mind the units of anything handed to an Android timing or sizing API.
+`postDelayed` is milliseconds, `setRepeating` is milliseconds,
+`WindowManager.LayoutParams` durations are milliseconds. These calls take
+`Long`, so passing the wrong unit compiles silently and produces a number that
+is wrong by a factor of a thousand rather than an error.
 
 ## Verify claims against the built artifact, not the source
 

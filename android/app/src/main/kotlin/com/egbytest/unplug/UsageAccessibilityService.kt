@@ -481,6 +481,7 @@ class UsageAccessibilityService : AccessibilityService() {
     private val deadlineHandler = Handler(Looper.getMainLooper())
     private var deadlineGroup = ""
     private var deadlineLimit = 0
+    private var deadlineLogKey = ""
 
     private fun armDeadline(group: String, limit: Int, usedMinutes: Int, totalLimit: Int) {
         val remainingSec = (totalLimit - usedMinutes) * 60L
@@ -488,8 +489,28 @@ class UsageAccessibilityService : AccessibilityService() {
         if (remainingSec <= 0L) return
         deadlineGroup = group
         deadlineLimit = limit
-        deadlineHandler.postDelayed(deadlineCheck, remainingSec)
-        Log.i(TAG, "deadline armed for $group in ${remainingSec / 60}m ($usedMinutes/$totalLimit)")
+        // Handler delays are MILLISECONDS. Passing seconds here once armed a
+        // 17-minute deadline at 1020ms, which turned this into a self
+        // re-arming once-a-second loop on the main looper — the same looper
+        // accessibility events are delivered on. The service spent its life
+        // doing a synchronous usage query per second and stopped enforcing
+        // anything, and because the loop re-armed itself, no amount of leaving
+        // the app helped. Observed on device: "deadline armed ... in 17m"
+        // repeating once every 1.025s until the process was restarted.
+        val delayMs = remainingSec * 1000L
+        // Floor and ceiling are belt and braces. Nothing about a limit change
+        // should be able to turn this into a hot loop again, and a re-arm
+        // that lands every few seconds is indistinguishable from the bug
+        // above when you are the one reading the logs.
+        val safeDelayMs = delayMs.coerceIn(30_000L, 6L * 60L * 60L * 1000L)
+        deadlineHandler.postDelayed(deadlineCheck, safeDelayMs)
+        // Only log when the deadline actually moves. armDeadline runs on every
+        // accessibility event, so logging unconditionally puts two lines per
+        // event into logcat from the hottest path in the app.
+        if (deadlineLogKey != "$group/$safeDelayMs") {
+            deadlineLogKey = "$group/$safeDelayMs"
+            Log.i(TAG, "deadline armed for $group in ${remainingSec / 60}m ($usedMinutes/$totalLimit)")
+        }
     }
 
     private val deadlineCheck = object : Runnable {

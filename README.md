@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <strong>Version 2.1.0</strong> · Android 7.0+ · Free · No accounts
+  <strong>Version 2.1.1</strong> · Android 7.0+ · Free · No accounts
 </p>
 
 ---
@@ -154,6 +154,7 @@ The banner only shows when there's genuinely something newer, and you can dismis
 <details>
 <summary><strong>If updates aren't appearing</strong></summary>
 
+- **On v2.1.0:** **don't stay on it.** It has a bug that stops the app blocker working until you force-close Unplug. Upgrade to 2.1.1 or later by hand. Details below.
 - **On v2.0.2 or older:** those builds send you to the browser instead of downloading in-app. Everything still works, it's just the longer route.
 - **On v1.1.7 or older:** those builds are missing a permission they need to reach the network at all. They can't detect any update, including the one that fixes it. Download the latest release by hand.
 - **On v1.1.9:** also by hand. That release is a pre-release, and pre-releases aren't offered to anyone.
