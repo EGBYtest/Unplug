@@ -399,18 +399,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
 //
 // The challenge is on the direction that adds friction, not the one that
 // removes it:
+// The two are not symmetric with each other, and the difference is that one
+// of them has an interval to weaken.
 //
-//   turning ON   → challenge. Switching a reminder on is the one action here
-//                  that changes what happens unprompted, later, without the
-//                  user present for it. It deserves the same pause as any
-//                  other change to how the limiter behaves.
-//   turning OFF  → free. Requiring a challenge to disable something is a
-//                  setting you cannot get out of, which is the opposite of
-//                  what the lock is for.
-//   changing the interval → free, once the reminder is already on. Tuning how
-//                  long a thing you already asked for should last is not a new
-//                  commitment, and gating it would make the setting harder to
-//                  use than it is worth.
+//   Open gate — one gated transition, turning it on. It has no other tunable
+//   value, so that is the whole story: on costs a challenge, off is free.
+//
+//   Break reminder — two gated actions, because it has two things worth
+//   weakening. Turning it on costs a challenge, and so does retuning the
+//   interval of one that is already running: the number is how long the app
+//   can be used before it interrupts, so moving it is weakening the thing
+//   the setting exists to do. Choosing the interval in the same pass that
+//   switches it on is part of that one commitment, not a second one.
+//
+// Turning either OFF is always free. Requiring a challenge to disable
+// something makes it a setting you cannot get out of, which is the opposite
+// of what the lock is for.
 
 Future<void> _setOpenGate(int index, bool value) async {
     setState(() {
@@ -452,13 +456,31 @@ Future<void> _editBreakReminder(int index) async {
       await _storage.saveGroups(_groups);
     };
 
-    // Only the off→on transition is gated. Turning it off, or moving the
-    // interval of a reminder that is already running, both apply directly.
-    if (result.enabled && !wasEnabled) {
-      _confirmChange(apply);
-    } else {
-      await apply();
+    // Nothing actually changed — saving the sheet untouched is not a change
+    // and must not open a challenge for one.
+    if (result.enabled == wasEnabled &&
+        result.minutes == group.breakReminderMinutes) {
+      return;
     }
+
+    // Turning off is always free.
+    if (!result.enabled) {
+      await apply();
+      return;
+    }
+
+    // Reminder is on, or is being switched on. Two distinct gated actions:
+    //
+    //   off → on        the initial commitment, and choosing the interval as
+    //                   part of it is part of that same commitment — one
+    //                   challenge covers the whole thing
+    //   on → on, moved  a live reminder being retuned. Same reasoning as
+    //                   turning it on: the delay before it interrupts is the
+    //                   thing being weakened, so it costs the same pause.
+    //
+    // The open gate deliberately does not share this: it has no interval to
+    // retune, so it is gated on exactly one transition and nothing else.
+    _confirmChange(apply);
   }
 
 void _toggleBannedFeature(BannedFeature feature, bool isEnabled) async {

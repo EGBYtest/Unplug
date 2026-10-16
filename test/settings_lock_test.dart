@@ -77,12 +77,15 @@ void main() {
   });
 
   group('the two interstitials gate the direction that adds friction', () {
-    // Turning the open gate or the break reminder ON is the one action here
-    // that changes what happens later, unprompted, while the user is not
-    // present to see it — so it costs the challenge. Turning one OFF must
-    // stay free, or the setting cannot be undone without a hurdle, and
-    // changing the interval of a reminder that is already running is tuning
-    // something already asked for, not a new commitment.
+    // Not symmetric with each other, and the reason is that only the break
+    // reminder has an interval to weaken.
+    //
+    // Open gate: one gated transition (turning it on) and nothing else.
+    // Break reminder: turning it on AND retuning the interval of one that is
+    // already running. The number is how long the app can be used before it
+    // interrupts, so moving it weakens what the setting is for.
+    //
+    // Turning either off stays free in both cases.
 
     /// Both features live behind a group's action sheet, and the sheet also
     /// holds "Edit Time Limit", so the row is targeted by its own label.
@@ -161,8 +164,7 @@ void main() {
       );
     });
 
-    testWidgets('changing the interval of a running reminder is free',
-        (tester) async {
+    testWidgets('retuning a running reminder is gated', (tester) async {
       await StorageService().setSettingsLockEnabled(true);
       await StorageService().saveGroups([
         AppGroup(
@@ -186,11 +188,87 @@ void main() {
 
       expect(
         find.text('Confirm Change'),
-        findsNothing,
-        reason: 'tuning an already-on reminder must not re-open the challenge',
+        findsOneWidget,
+        reason: 'the interval is how long use can continue before the '
+            'reminder interrupts, so retuning a live one is weakening it',
       );
-      expect(StorageService().loadGroups().first.breakReminderMinutes,
-          isNot(10));
+      expect(
+        StorageService().loadGroups().first.breakReminderMinutes,
+        equals(10),
+        reason: 'the old interval must stand until the challenge is met',
+      );
+    });
+
+    // Saving the sheet without touching anything must not open a challenge.
+    // Otherwise a user who opens the sheet, looks at it and closes it with
+    // Save pays a wait for having changed nothing.
+    testWidgets('saving an untouched reminder is not a change', (tester) async {
+      await StorageService().setSettingsLockEnabled(true);
+      await StorageService().saveGroups([
+        AppGroup(
+          name: 'Social Media',
+          packageNames: const ['com.instagram.android'],
+          timeLimitMinutes: 30,
+          breakReminderEnabled: true,
+          breakReminderMinutes: 10,
+        ),
+      ]);
+      await openFirstGroupSheet(tester);
+
+      await tester.tap(groupRow('Break Reminder: On (10m)'));
+      await tester.pumpAndSettle();
+      await tester.tap(sheetSave());
+      await tester.pumpAndSettle();
+
+      expect(find.text('Confirm Change'), findsNothing);
+      expect(StorageService().loadGroups().first.breakReminderMinutes, equals(10));
+    });
+
+    // Turning it off must not ask for the interval either, or disabling
+    // becomes conditional on a second setting.
+    testWidgets('turning the break reminder OFF is free', (tester) async {
+      await StorageService().setSettingsLockEnabled(true);
+      await StorageService().saveGroups([
+        AppGroup(
+          name: 'Social Media',
+          packageNames: const ['com.instagram.android'],
+          timeLimitMinutes: 30,
+          breakReminderEnabled: true,
+          breakReminderMinutes: 25,
+        ),
+      ]);
+      await openFirstGroupSheet(tester);
+
+      await tester.tap(groupRow('Break Reminder: On (25m)'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(CupertinoSwitch).last);
+      await tester.pumpAndSettle();
+      await tester.tap(sheetSave());
+      await tester.pumpAndSettle();
+
+      expect(find.text('Confirm Change'), findsNothing);
+      expect(StorageService().loadGroups().first.breakReminderEnabled, isFalse);
+    });
+
+    // The open gate has no interval, so it must never ask for a second
+    // challenge — there is nothing left to change after switching it on.
+    testWidgets('the open gate never asks more than once', (tester) async {
+      await StorageService().setSettingsLockEnabled(true);
+      await StorageService().saveGroups([
+        AppGroup(
+          name: 'Social Media',
+          packageNames: const ['com.instagram.android'],
+          timeLimitMinutes: 30,
+          openGateEnabled: true,
+        ),
+      ]);
+      await openFirstGroupSheet(tester);
+
+      await tester.tap(groupRow('Open Gate: On'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Confirm Change'), findsNothing);
+      expect(StorageService().loadGroups().first.openGateEnabled, isFalse);
     });
   });
 

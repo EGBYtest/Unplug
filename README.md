@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <strong>Version 2.2.1</strong> · Android 7.0+ · Free · No accounts
+  <strong>Version 2.2.2</strong> · Android 7.0+ · Free · No accounts
 </p>
 
 ---
@@ -89,7 +89,9 @@ Both are **off by default** and both are set **per group**, so you can gate a me
 
 Both work the same way the lock screen does: a real system-level overlay, drawn over everything including the launcher. And both lose to the time limit — if you're out, you get the lock screen, not a gentler version of it.
 
-Turning one **on** asks the same challenge as any other settings change — it's the one action here that changes what happens later, unprompted, while you're not there to see it. Turning one **off** is free, because a setting you can't undo without a hurdle isn't a setting. And once a reminder is already on, changing how long it takes to appear is free too.
+Turning one **on** asks the same challenge as any other settings change — it's the one action here that changes what happens later, unprompted, while you're not there to see it. **Turning one off is always free**, because a setting you can't undo without a hurdle isn't a setting.
+
+The **break reminder** asks once more, and this is the only difference between the two: it's the one with a number to weaken. The interval is how long you can use the app before it interrupts, so changing it on a reminder that's already running costs the same pause as turning it on did. Choosing the interval in the same pass that switches it on is part of that one commitment, not a second one. The **open gate** has no interval, so it only ever asks once.
 
 ---
 
