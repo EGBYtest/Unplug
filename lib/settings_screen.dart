@@ -226,10 +226,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     child: const Text('Save', style: TextStyle(color: Color(0xFF0A84FF), fontWeight: FontWeight.bold)),
                     onPressed: () async {
                       final totalMinutes = tempHours * 60 + tempMinutes;
+                      // Only the limit changes here; rebuilding without the
+                      // rest of the group would clear bannedFeatures and both
+                      // interstitial flags as a side effect of picking a time.
                       setState(() => _groups[index] = AppGroup(
                         name: group.name,
                         packageNames: group.packageNames,
                         timeLimitMinutes: totalMinutes,
+                        bannedFeatures: group.bannedFeatures,
+                        breakReminderEnabled: group.breakReminderEnabled,
+                        openGateEnabled: group.openGateEnabled,
+                        breakReminderMinutes: group.breakReminderMinutes,
                       ));
                       await _storage.saveGroups(_groups);
                       if (mounted) Navigator.pop(context);
@@ -365,12 +372,79 @@ class _SettingsScreenState extends State<SettingsScreen> {
       CupertinoPageRoute(builder: (_) => AppPickerScreen(initialSelection: group.packageNames, groupName: group.name)),
     );
     if (selected != null) {
-      setState(() => _groups[index] = AppGroup(name: group.name, packageNames: selected, timeLimitMinutes: group.timeLimitMinutes));
+      setState(() {
+        _groups[index] = AppGroup(
+          name: group.name,
+          packageNames: selected,
+          timeLimitMinutes: group.timeLimitMinutes,
+          // Carried across explicitly. Rebuilding from the constructor alone
+          // silently reset bannedFeatures to empty — and now the two
+          // interstitials — every time someone edited the app list.
+          bannedFeatures: group.bannedFeatures,
+          breakReminderEnabled: group.breakReminderEnabled,
+          openGateEnabled: group.openGateEnabled,
+          breakReminderMinutes: group.breakReminderMinutes,
+        );
+      });
       await _storage.saveGroups(_groups);
     }
   }
 
-  void _toggleBannedFeature(BannedFeature feature, bool isEnabled) async {
+  // ─── Per-group Break Reminder & Open Gate ─────────────────────────────────
+
+// Both are per-group toggles rather than global ones because the right answer
+// differs by what is in the group: gating a messaging app on every entry is
+// reasonable, gating a two-tap calculator app is not, and one global switch
+// cannot say that. Turning one ON is free (asking for friction is not a way
+// around the lock) but turning it OFF costs the same challenge as any other
+// setting, because that is the direction that needs the user's attention.
+
+Future<void> _setOpenGate(int index, bool value) async {
+    setState(() {
+      _groups[index].openGateEnabled = value;
+    });
+    await _storage.saveGroups(_groups);
+  }
+
+Future<void> _editBreakReminder(int index) async {
+    final group = _groups[index];
+    await _showBreakReminderSheet(index);
+  }
+
+Future<void> _showBreakReminderSheet(int index) async {
+    final group = _groups[index];
+    await showCupertinoModalPopup<void>(
+      context: context,
+      builder: (popupContext) => _BreakReminderSheet(
+        initialEnabled: group.breakReminderEnabled,
+        initialMinutes: group.breakReminderMinutes,
+        onCancel: () => Navigator.pop(popupContext),
+        onSave: (enabled, minutes) async {
+          setState(() {
+            group.breakReminderEnabled = enabled;
+            group.breakReminderMinutes = minutes;
+          });
+          await _storage.saveGroups(_groups);
+          // The popup's own context is unmounted by the time an await returns,
+          // so this checks the State's context rather than the captured one.
+          if (!mounted) return;
+          Navigator.pop(popupContext);
+        },
+      ),
+    );
+  }
+
+Future<void> _editOpenGate(int index) async {
+    final turningOn = !_groups[index].openGateEnabled;
+    // Same asymmetry as Settings Lock: enabling is free, disabling is not.
+    if (turningOn) {
+      await _setOpenGate(index, true);
+    } else {
+      _confirmChange(() => _setOpenGate(index, false));
+    }
+  }
+
+void _toggleBannedFeature(BannedFeature feature, bool isEnabled) async {
     setState(() {
       feature.isEnabled = isEnabled;
     });
@@ -653,6 +727,20 @@ final bonusSeconds = _storage.remainingBonusSeconds(
         actions: [
           CupertinoActionSheetAction(child: const Text('Edit Time Limit'), onPressed: () { Navigator.pop(context); _confirmChange(() => _editLimit(index)); }),
           CupertinoActionSheetAction(child: const Text('Edit Apps in Group'), onPressed: () { Navigator.pop(context); _confirmChange(() => _editGroupApps(index)); }),
+          CupertinoActionSheetAction(
+            child: Text('Break Reminder: ${group.breakReminderEnabled ? "On (${group.breakReminderMinutes}m)" : "Off"}'),
+            onPressed: () {
+              Navigator.pop(context);
+              _confirmChange(() => _editBreakReminder(index));
+            },
+          ),
+          CupertinoActionSheetAction(
+            child: Text('Open Gate: ${group.openGateEnabled ? "On" : "Off"}'),
+            onPressed: () {
+              Navigator.pop(context);
+              _confirmChange(() => _editOpenGate(index));
+            },
+          ),
           if (bonusSeconds > 0)
             CupertinoActionSheetAction(
               isDestructiveAction: true,
@@ -1057,7 +1145,7 @@ class _WaitDurationSheetState extends State<_WaitDurationSheet> {
               children: [
                 Text(i < 10 ? '0$i' : '$i',
                     style: i == value ? selectedStyle : mutedStyle),
-                SizedBox(width: _labelGap),
+                const SizedBox(width: _labelGap),
                 Text(unit,
                     style: (i == value ? selectedStyle : mutedStyle)
                         .copyWith(fontSize: _labelFontSize)),
@@ -1065,6 +1153,150 @@ class _WaitDurationSheetState extends State<_WaitDurationSheet> {
             ),
           ),
       ],
+    );
+  }
+}
+
+/// Sets the per-group break reminder: whether it is on, and how long
+/// continuous use has to last before it asks.
+///
+/// One sheet for both, because the duration is meaningless while the switch
+/// is off and turning the reminder on is the moment the number starts mattering
+/// — splitting them across two screens is how a number gets set and then never
+/// switched on.
+class _BreakReminderSheet extends StatefulWidget {
+  final bool initialEnabled;
+  final int initialMinutes;
+  final VoidCallback onCancel;
+  final void Function(bool enabled, int minutes) onSave;
+
+  const _BreakReminderSheet({
+    required this.initialEnabled,
+    required this.initialMinutes,
+    required this.onCancel,
+    required this.onSave,
+  });
+
+  @override
+  State<_BreakReminderSheet> createState() => _BreakReminderSheetState();
+}
+
+class _BreakReminderSheetState extends State<_BreakReminderSheet> {
+  static const int _floor = AppGroup.minBreakReminderMinutes;
+  static const int _ceiling = AppGroup.maxBreakReminderMinutes;
+
+  late bool _enabled;
+  late int _minutes;
+  late FixedExtentScrollController _ctl;
+
+  @override
+  void initState() {
+    super.initState();
+    _enabled = widget.initialEnabled;
+    _minutes = widget.initialMinutes.clamp(_floor, _ceiling);
+    _ctl = FixedExtentScrollController(initialItem: _minutes - _floor);
+  }
+
+  @override
+  void dispose() {
+    _ctl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final selectedStyle = TextStyle(
+      color: CupertinoTheme.of(context).primaryColor,
+      fontSize: 21.0 * (34 / 32),
+    );
+    final normalStyle = TextStyle(
+      color: CupertinoTheme.of(context).textTheme.pickerTextStyle.color ??
+          CupertinoColors.white,
+      fontSize: 21.0 * (34 / 32),
+    );
+    final mutedStyle = normalStyle.copyWith(color: normalStyle.color!.withValues(alpha: 0.5));
+
+    return Container(
+      height: _enabled ? 340 : 190,
+      decoration: const BoxDecoration(
+        color: Color(0xFF1C1C1E),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  onPressed: widget.onCancel,
+                  child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
+                ),
+                const Text('Break Reminder',
+                    style: TextStyle(
+                        color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  child: const Text('Save',
+                      style: TextStyle(color: Color(0xFF0A84FF), fontWeight: FontWeight.bold)),
+                  onPressed: () => widget.onSave(_enabled, _minutes),
+                ),
+              ],
+            ),
+          ),
+          const Divider(color: Colors.white12, height: 1),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Expanded(
+                  child: Text('Ask after continuous use',
+                      style: TextStyle(color: Colors.white, fontSize: 15)),
+                ),
+                CupertinoSwitch(
+                  value: _enabled,
+                  onChanged: (v) => setState(() => _enabled = v),
+                ),
+              ],
+            ),
+          ),
+          // The picker is only meaningful while the reminder is on, so it is
+          // built out of the tree entirely when off rather than shown disabled.
+          if (_enabled) ...[
+            const SizedBox(height: 4),
+            const Text('Continuous use before the reminder',
+                style: TextStyle(color: Colors.white54, fontSize: 13)),
+            Expanded(
+              child: CupertinoPicker(
+                itemExtent: 32.0,
+                scrollController: _ctl,
+                onSelectedItemChanged: (i) => _minutes = i + _floor,
+                children: [
+                  for (int i = _floor; i <= _ceiling; i++)
+                    Center(
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.baseline,
+                        textBaseline: TextBaseline.alphabetic,
+                        children: [
+                          Text(i < 10 ? '0$i' : '$i',
+                              style: i == _minutes ? selectedStyle : mutedStyle),
+                          const SizedBox(width: 6.0),
+                          Text('min',
+                              style: (i == _minutes ? selectedStyle : mutedStyle)
+                                  .copyWith(fontSize: 17.0)),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }

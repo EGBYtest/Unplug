@@ -42,12 +42,39 @@ class AppGroup {
   int timeLimitMinutes;
   List<BannedFeature> bannedFeatures;
 
+  /// Ask "was this meant to be a long sit or a quick check?" once the user has
+  /// been in one of this group's apps continuously for
+  /// [breakReminderMinutes]. Off by default — it is friction the user opts
+  /// into per group, never something a new group silently inherits.
+  bool breakReminderEnabled;
+
+  /// Gate every launch of this group's apps behind a short countdown with an
+  /// explicit "Open X" / "Go back" choice. Off by default, same reasoning.
+  bool openGateEnabled;
+
+  /// How long continuous use must last before the break reminder fires.
+  /// Minutes, matching [timeLimitMinutes] so both are read on the same scale.
+  /// Clamped on read, so a hand-edited value cannot make the reminder fire
+  /// instantly or effectively never.
+  int breakReminderMinutes;
+
+  static const int defaultBreakReminderMinutes = 10;
+  static const int minBreakReminderMinutes = 1;
+  static const int maxBreakReminderMinutes = 60;
+
   AppGroup({
     required this.name,
     required this.packageNames,
     required this.timeLimitMinutes,
     List<BannedFeature>? bannedFeatures,
-  }) : bannedFeatures = bannedFeatures ?? [];
+    this.breakReminderEnabled = false,
+    this.openGateEnabled = false,
+    int breakReminderMinutes = defaultBreakReminderMinutes,
+  })  : bannedFeatures = bannedFeatures ?? [],
+        breakReminderMinutes = breakReminderMinutes.clamp(
+          minBreakReminderMinutes,
+          maxBreakReminderMinutes,
+        );
 
   int getRemainingTime(int totalUsageMinutes, {int bonusMinutes = 0}) {
     final effective = timeLimitMinutes + bonusMinutes - totalUsageMinutes;
@@ -59,17 +86,29 @@ class AppGroup {
     'packageNames': packageNames,
     'timeLimitMinutes': timeLimitMinutes,
     'bannedFeatures': bannedFeatures.map((b) => b.toJson()).toList(),
+    'breakReminderEnabled': breakReminderEnabled,
+    'openGateEnabled': openGateEnabled,
+    'breakReminderMinutes': breakReminderMinutes,
   };
 
+  // Every field above the flags is required, but a stored payload written by an
+  // older build simply has no break-reminder or open-gate keys. They default
+  // to off rather than being inferred, so upgrading never turns friction on for
+  // someone who never asked for it. The Kotlin side reads them with optBoolean
+  // for the same reason — see UsageAccessibilityService.
   factory AppGroup.fromJson(Map<String, dynamic> json) => AppGroup(
-    name: json['name'] as String,
-    packageNames: List<String>.from(json['packageNames'] as List),
-    timeLimitMinutes: json['timeLimitMinutes'] as int,
-    bannedFeatures: json['bannedFeatures'] != null
-        ? (json['bannedFeatures'] as List)
-            .map((e) => BannedFeature.fromJson(Map<String, dynamic>.from(e as Map)))
-            .toList()
-        : [],
-  );
+        name: json['name'] as String,
+        packageNames: List<String>.from(json['packageNames'] as List),
+        timeLimitMinutes: json['timeLimitMinutes'] as int,
+        bannedFeatures: json['bannedFeatures'] != null
+            ? (json['bannedFeatures'] as List)
+                .map((e) => BannedFeature.fromJson(Map<String, dynamic>.from(e as Map)))
+                .toList()
+            : [],
+        breakReminderEnabled: json['breakReminderEnabled'] as bool? ?? false,
+        openGateEnabled: json['openGateEnabled'] as bool? ?? false,
+        breakReminderMinutes: (json['breakReminderMinutes'] as int?) ??
+            defaultBreakReminderMinutes,
+      );
 }
 

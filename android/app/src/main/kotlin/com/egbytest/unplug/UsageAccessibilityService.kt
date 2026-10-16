@@ -42,6 +42,9 @@ private fun SharedPreferences.getFlutterInt(key: String, default: Int): Int {
 class UsageAccessibilityService : AccessibilityService() {
 
     private val TAG = "UsageService"
+
+    /** View id of the countdown digits, so the tick can find them by lookup. */
+    private val COUNTDOWN_ID = 0x1001
     private var lastPkg = ""
     private var lastCheck = 0L
     private val blockCount = mutableMapOf<String, LongArray>() // pkg -> [count, firstBlockMs]
@@ -55,6 +58,60 @@ class UsageAccessibilityService : AccessibilityService() {
     private var lastMainLaunch = 0L
     private val overlayHandler = Handler(Looper.getMainLooper())
 
+    // Which overlay is on screen. blockApp() returns early when one is active
+    // so overlays never stack, which is correct for block — but wrong for the
+    // two opt-in interstitials, which are not a penalty and must yield to a
+    // real block. Without this, a group sitting at its limit would show the
+    // open gate on launch and swallow the block that was already owed.
+    //   ""          none
+    //   "block"     time exhausted / banned feature — unclosable
+    //   "gate"      open gate — Open / Go back buttons after the countdown
+    //   "reminder"  break reminder — Close button after the countdown
+    private var overlayMode = ""
+
+    // ─── Foreground package tracking ─────────────────────────────────────
+    //
+    // Both opt-in interstitials are about *sessions*, not about the app that
+    // happens to be frontmost when an event fires:
+    //
+    //   the open gate fires when the user *enters* an app, and
+    //   the break reminder fires after N minutes of *continuous* use.
+    //
+    // Neither is derivable from the events for one package alone, because
+    // onAccessibilityEvent deliberately discards com.android.* and
+    // com.systemui before doing anything. So the transition away from a
+    // restricted app to the launcher is invisible unless it is observed here,
+    // on the way past that filter. Without this, leaving Instagram and coming
+    // back looks like one unbroken session: the gate would never fire a second
+    // time, and the reminder would keep counting a session the user had
+    // already ended.
+    //
+    // Only TYPE_WINDOW_STATE_CHANGED counts as a transition. Content-change
+    // events from systemui arrive constantly, and treating those as "left the
+    // app" would restart the session on every notification shade pull.
+    private var lastForegroundPkg = ""
+
+    /** True when this package has already been gated for the current entry. */
+    private var gateShownFor = ""
+
+    // ─── Continuous-use session ─────────────────────────────────────────
+    //
+    // Start of the current uninterrupted sit in one restricted app, used only
+    // by the break reminder. Reset on a foreground transition away, and
+    // re-validated when the reminder fires rather than trusted blindly: the
+    // session can end without any event reaching this service at all (screen
+    // off, app killed from recents), and the reminder must not fire over a
+    // session that ended ten minutes ago.
+    private val breakHandler = Handler(Looper.getMainLooper())
+    private var breakSessionPkg = ""
+    private var breakSessionStart = 0L
+    private var breakMinutes = 10
+    private var breakFiredThisSession = false
+
+    /** Milliseconds. Guards against a zero/garbage persisted value. */
+    private fun breakThresholdMs(): Long =
+        breakMinutes.coerceIn(1, 60) * 60_000L
+
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         try {
             val type = event?.eventType ?: return
@@ -65,6 +122,18 @@ class UsageAccessibilityService : AccessibilityService() {
                 type != AccessibilityEvent.TYPE_VIEW_SCROLLED) return
 
             val pkg = event.packageName?.toString()?.trim() ?: return
+
+            // Observed before the self/system filter, because "the user left
+            // the restricted app" is exactly the transition this filter hides.
+            if (type == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED && pkg != packageName) {
+                // Our own overlay is an accessibility overlay owned by this
+                // service, so adding and removing it produces window state
+                // changes under our own package name. Counting those as the
+                // foreground changing would clear gateShownFor the moment the
+                // gate went up, so it would immediately re-arm over itself.
+                onForegroundChanged(pkg)
+            }
+
             if (pkg == packageName || pkg.startsWith("com.android.") || pkg.startsWith("com.systemui")) return
 
             Log.i(TAG, "event: $pkg (type=$type)")
@@ -171,6 +240,9 @@ class UsageAccessibilityService : AccessibilityService() {
             } else {
                 Log.i(TAG, "ok $pkg ($groupName): ${usedMinutes}m / ${totalLimit}m (bonus=${bonusSecondsFor(groupName, prefs)}s, resetHour=${prefs.getFlutterInt("flutter.reset_hour", 2)})")
                 armDeadline(groupName, limit, usedMinutes, totalLimit)
+                // Only meaningful while the user is inside the app and under
+                // limit; the reminder is about a sit that is still going.
+                trackBreakSession(pkg, g)
             }
             return
         }
@@ -811,9 +883,188 @@ class UsageAccessibilityService : AccessibilityService() {
         return false
     }
 
+    // ─── Foreground sessions, open gate, break reminder ───────────────
+    //
+    // Two opt-in interstitials, both per-group, both off by default:
+    //
+    //  1. Open gate — every time the user enters one of the group's apps,
+    //     a short countdown runs with no way through, and only after it
+    //     finishes do "Open X" and "Go back" appear. Tapping Open does
+    //     nothing to the app: it was already launched, the overlay was
+    //     only ever a question asked on top of it.
+    //
+    //  2. Break reminder — after the group has been used continuously for
+    //     the configured number of minutes, ask whether the sit was meant
+    //     to be this long. It does not close anything and does not dismiss
+    //     itself; it waits for a Close tap.
+    //
+    // Neither is a penalty and neither reduces the remaining time, which is
+    // why they are allowed to yield to a real block below: a user who is
+    // already over their limit must get the block, not a nicer version of it.
+    //
+    // Group config keys are read with optBoolean rather than getBoolean, so
+    // an install whose stored groups predate these fields loads as "off"
+    // instead of throwing inside the event handler.
+
+    /** The group owning [pkg], or null. Also the lookup both features share. */
+    private fun groupFor(pkg: String, groups: JSONArray): JSONObject? {
+        for (i in 0 until groups.length()) {
+            val g = groups.getJSONObject(i)
+            val pkgs = g.optJSONArray("packageNames") ?: continue
+            for (j in 0 until pkgs.length()) {
+                if (pkgs.optString(j).trim() == pkg) return g
+            }
+        }
+        return null
+    }
+
+    private fun appLabel(pkg: String): String {
+        return try {
+            val pm = packageManager
+            pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
+        } catch (_: Exception) {
+            pkg.substringAfterLast('.')
+        }
+    }
+
+    /**
+     * A restricted app lost or gained the foreground. Ends the previous
+     * continuous-use session and, on entering one, offers the open gate.
+     */
+    private fun onForegroundChanged(pkg: String) {
+        if (pkg == lastForegroundPkg) return
+        val previous = lastForegroundPkg
+        lastForegroundPkg = pkg
+
+        // Leaving a restricted app ends its session. Not conditional on the
+        // group having the reminder on: a session that stopped counting when
+        // the setting was switched off mid-sit must not resume counting as if
+        // it had run continuously.
+        if (breakSessionPkg.isNotEmpty() && breakSessionPkg != pkg) {
+            endBreakSession("left for $pkg")
+        }
+
+        // A new entry may be gated again, but only if this package is not the
+        // one already behind the gate — otherwise showing the gate is itself
+        // enough to look like a foreground change and it would re-arm.
+        if (pkg != gateShownFor) gateShownFor = ""
+
+        // Walking away from the gate closes it rather than leaving an
+        // unclosable overlay over the launcher.
+        if (overlayMode == "gate" && overlayGroup != pkg) {
+            removeOverlay()
+        }
+
+        try {
+            val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+            val json = prefs.getString("flutter.app_groups", "[]") ?: "[]"
+            if (json == "[]") return
+            val group = groupFor(pkg, JSONArray(json)) ?: return
+
+            // Never gate a package the user is already over the limit on. The
+            // block is the correct response there and it is about to arrive;
+            // a gate in front of it would swallow the entry that triggers it.
+            val name = group.optString("name", "")
+            val used = groupUsageMinutes(name, prefs)
+            val total = effectiveLimitMinutes(name, group.optInt("timeLimitMinutes", 0), used, prefs)
+            if (total == 0 || used >= total) return
+
+            if (group.optBoolean("openGateEnabled", false)) {
+                showOpenGate(pkg, name)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "foreground change error", e)
+        }
+    }
+
+    // ─── Continuous-use session (break reminder) ────────────────────────
+
+    /** Called from the under-limit branch of checkAndBlock, on every event. */
+    private fun trackBreakSession(pkg: String, group: JSONObject) {
+        if (!group.optBoolean("breakReminderEnabled", false)) {
+            if (breakSessionPkg == pkg) endBreakSession("group setting off")
+            return
+        }
+        breakMinutes = group.optInt(
+            "breakReminderMinutes",
+            10,
+        ).coerceIn(1, 60)
+
+        val now = System.currentTimeMillis()
+        if (breakSessionPkg != pkg) {
+            breakHandler.removeCallbacks(breakCheck)
+            breakSessionPkg = pkg
+            breakSessionStart = now
+            breakFiredThisSession = false
+        }
+
+        // One arm per session. Re-arming on every event is what turned the
+        // limit deadline into a once-a-second loop in v2.0.2; the session timer
+        // is short enough that the bug would be just as visible here.
+        if (breakFiredThisSession) return
+        if (breakHandler.hasCallbacks(breakCheck)) return
+
+        val elapsed = now - breakSessionStart
+        val remaining = breakThresholdMs() - elapsed
+        if (remaining <= 0L) {
+            breakCheck.run()
+            return
+        }
+        breakHandler.postDelayed(breakCheck, remaining)
+        Log.i(TAG, "break reminder armed for $pkg in ${breakMinutes}m")
+    }
+
+    private fun endBreakSession(reason: String) {
+        if (breakSessionPkg.isEmpty()) return
+        breakHandler.removeCallbacks(breakCheck)
+        Log.i(TAG, "break session ended for $breakSessionPkg ($reason)")
+        breakSessionPkg = ""
+        breakSessionStart = 0L
+        breakFiredThisSession = false
+    }
+
+    private val breakCheck = object : Runnable {
+        override fun run() {
+            val pkg = breakSessionPkg
+            if (pkg.isEmpty()) return
+            try {
+                // The session can end with no event reaching this service at
+                // all — screen off, or killed from recents — so "is it still
+                // going" is answered by asking the window list, not by assuming
+                // the timer was right.
+                if (pkg != lastForegroundPkg || !isVisible(pkg)) {
+                    endBreakSession("no longer in foreground")
+                    return
+                }
+                breakFiredThisSession = true
+                Log.i(TAG, "break reminder for $pkg after ${breakMinutes}m continuous")
+                showBreakOverlay(pkg)
+            } catch (e: Exception) {
+                Log.e(TAG, "break check failed", e)
+            }
+        }
+    }
+
+    /** Whether [pkg] still has a window on screen. Cheap; used by both timers. */
+    private fun isVisible(pkg: String): Boolean {
+        return try {
+            val list = windows ?: return false
+            for (w in list) {
+                if (w.root?.packageName?.toString()?.trim() == pkg) return true
+            }
+            false
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     private fun blockApp(pkg: String, group: String, feature: String? = null) {
-        // Don't stack overlays or restart the flow while one is active.
-        if (overlayActive) return
+        // A real block always wins over the opt-in interstitials — they are
+        // questions, not consequences. Only a block defers to another block.
+        if (overlayActive) {
+            if (overlayMode == "block") return
+            removeOverlay()
+        }
         val now = System.currentTimeMillis()
         if (now - lastMainLaunch < 1500) return
 
@@ -860,122 +1111,264 @@ class UsageAccessibilityService : AccessibilityService() {
      */
     private fun showCountdownOverlay(group: String, feature: String) {
         try {
-            val canOverlay = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                Settings.canDrawOverlays(this)
-            } else true
-            if (!canOverlay) {
-                launchLockScreenActivity(group, feature, skipCountdown = false)
-                return
-            }
-
-            removeOverlay()
+            val ctx = applicationContext
+            val root = overlayRoot(ctx)
             overlayGroup = group
             overlayFeature = feature
-            overlayCountdown = 5
-            overlayActive = true
-
-            val ctx = applicationContext
-            val root = LinearLayout(ctx).apply {
-                orientation = LinearLayout.VERTICAL
-                gravity = Gravity.CENTER
-                setBackgroundColor(Color.parseColor("#FF0A0A0A"))
-                isClickable = true
-            }
-            root.setOnTouchListener { _, _ -> true }
+            overlayMode = "block"
 
             val isFeature = feature.isNotEmpty()
-            val icon = TextView(ctx).apply {
-                text = if (isFeature) "🚫" else "🔒"
-                textSize = 44f
-                gravity = Gravity.CENTER
-            }
-            val title = TextView(ctx).apply {
-                text = if (isFeature) "In-App Feature Blocked" else "Time Exhausted"
-                textSize = 22f
-                setTextColor(Color.WHITE)
-                setTypeface(null, Typeface.BOLD)
-                gravity = Gravity.CENTER
-            }
-            val subtitle = TextView(ctx).apply {
-                text = if (isFeature) "Access to \"$feature\" in $group is restricted."
-                        else "Your screen time for \"$group\" is up."
-                textSize = 15f
-                setTextColor(Color.parseColor("#B3B3B3"))
-                gravity = Gravity.CENTER
-                setPadding(dp(32), dp(8), dp(32), 0)
-            }
-            val count = TextView(ctx).apply {
-                id = 0x1001
-                text = "3"
-                textSize = 64f
-                setTextColor(Color.parseColor("#0A84FF"))
-                setTypeface(null, Typeface.BOLD)
-                gravity = Gravity.CENTER
-            }
-            val note = TextView(ctx).apply {
-                text = "Take five seconds before deciding\nif you really want more screen time."
-                textSize = 13f
-                setTextColor(Color.parseColor("#8C8C8C"))
-                gravity = Gravity.CENTER
-                setPadding(dp(32), dp(12), dp(32), 0)
-            }
+            root.addView(overlayText(ctx, if (isFeature) "🚫" else "🔒", 44f, Color.WHITE, bold = false))
+            root.addView(overlayText(ctx, if (isFeature) "In-App Feature Blocked" else "Time Exhausted", 22f, Color.WHITE, bold = true))
+            root.addView(overlayText(ctx, if (isFeature) "Access to \"$feature\" in $group is restricted."
+                    else "Your screen time for \"$group\" is up.", 15f, Color.parseColor("#B3B3B3"), padTop = 8))
+            root.addView(overlayCountdown(ctx))
+            root.addView(overlayText(ctx, "Take five seconds before deciding\nif you really want more screen time.", 13f, Color.parseColor("#8C8C8C"), padTop = 12))
 
-            root.addView(icon)
-            root.addView(title)
-            root.addView(subtitle)
-            root.addView(count)
-            root.addView(note)
-
-            // TYPE_ACCESSIBILITY_OVERLAY is the system-sanctioned window
-            // type for overlays drawn by an AccessibilityService. OEM
-            // security suites flag ordinary TYPE_APPLICATION_OVERLAY
-            // windows combined with accessibility usage as suspicious
-            // and may auto-disable the service. Accessibility overlays
-            // are explicitly allowed and need no SYSTEM_ALERT_WINDOW.
-            val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
-            } else {
-                @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE
-            }
-            val params = WindowManager.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                type,
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
-                    WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON,
-                PixelFormat.OPAQUE
-            )
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                params.layoutInDisplayCutoutMode =
-                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
-            }
-
-            val wm = getSystemService(WINDOW_SERVICE) as WindowManager
-            wm.addView(root, params)
-            overlayView = root
+            startOverlay(root, "block")
             Log.i(TAG, "countdown overlay shown for $group")
-
-            overlayHandler.removeCallbacks(overlayTick)
-            overlayHandler.post(overlayTick)
         } catch (e: Exception) {
             Log.e(TAG, "overlay error", e)
-            overlayActive = false
             removeOverlay()
             launchLockScreenActivity(group, feature, skipCountdown = false)
         }
     }
 
+    /**
+     * The open gate: every entry into a gated package waits here first. The app
+     * is already running behind the window — nothing has been closed or paused
+     * on its behalf — so "Open" is simply removing the overlay, and "Go back"
+     * is removing it and pressing back out of the app.
+     */
+    private fun showOpenGate(pkg: String, group: String) {
+        // Already inside this gate for this entry, or mid-block: nothing to do.
+        if (overlayActive) return
+        if (gateShownFor == pkg) return
+        // Entering the app is what puts the gate up; putting it up must not
+        // read as another entry, or it re-arms forever.
+        gateShownFor = pkg
+        try {
+            val ctx = applicationContext
+            val root = overlayRoot(ctx)
+            val label = appLabel(pkg)
+            overlayGroup = pkg
+            overlayMode = "gate"
+
+            root.addView(overlayText(ctx, "⏳", 44f, Color.WHITE))
+            root.addView(overlayText(ctx, "Opening $label", 22f, Color.WHITE, bold = true))
+            root.addView(overlayText(ctx, "Did you really intend to open $label?", 15f, Color.parseColor("#B3B3B3"), padTop = 8))
+            root.addView(overlayCountdown(ctx))
+            root.addView(overlayText(ctx, "Nothing has been opened yet.", 13f, Color.parseColor("#8C8C8C"), padTop = 12))
+
+            // Buttons start invisible. An always-visible button would be a way
+            // through the pause, and the pause is the entire feature.
+            val choices = LinearLayout(ctx).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                visibility = View.GONE
+                setPadding(dp(32), dp(24), dp(32), dp(32))
+            }
+            choices.addView(overlayButton(ctx, "Open $label", true) {
+                Log.i(TAG, "gate passed for $pkg")
+                removeOverlay()
+            })
+            choices.addView(overlayButton(ctx, "Go back", false) {
+                Log.i(TAG, "gate declined for $pkg")
+                removeOverlay()
+                performGlobalAction(GLOBAL_ACTION_BACK)
+            })
+            root.addView(choices)
+
+            startOverlay(root, "gate")
+            // Only meaningful if the overlay actually went up; startOverlay
+            // nulls this and returns early when drawing is not permitted.
+            if (overlayActive) overlayChoices = choices
+            Log.i(TAG, "open gate shown for $pkg ($group)")
+        } catch (e: Exception) {
+            // A gate that cannot be shown must not trap the user in front of an
+            // app they cannot get into: fall through and let the app open.
+            Log.e(TAG, "open gate error", e)
+            gateShownFor = ""
+            removeOverlay()
+        }
+    }
+
+    /**
+     * The break reminder. Unlike the block overlay this one never dismisses
+     * itself — it waits for a tap, which is the point of asking.
+     */
+    private fun showBreakOverlay(pkg: String) {
+        if (overlayActive) return
+        try {
+            val ctx = applicationContext
+            val root = overlayRoot(ctx)
+            val label = appLabel(pkg)
+            overlayGroup = pkg
+            overlayMode = "reminder"
+
+            root.addView(overlayText(ctx, "🧘", 44f, Color.WHITE))
+            root.addView(overlayText(ctx, "$breakMinutes minutes straight", 22f, Color.WHITE, bold = true))
+            root.addView(overlayText(ctx, "You have been in $label for $breakMinutes minutes.", 15f, Color.parseColor("#B3B3B3"), padTop = 8))
+            root.addView(overlayCountdown(ctx))
+            root.addView(overlayText(ctx, "Was this meant to be a long sit,\nor a quick check?", 13f, Color.parseColor("#8C8C8C"), padTop = 12))
+
+            val choices = LinearLayout(ctx).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                visibility = View.GONE
+                setPadding(dp(32), dp(24), dp(32), dp(32))
+            }
+            choices.addView(overlayButton(ctx, "Close", true) {
+                Log.i(TAG, "break reminder closed for $pkg")
+                removeOverlay()
+            })
+            root.addView(choices)
+
+            startOverlay(root, "reminder")
+            if (overlayActive) overlayChoices = choices
+            Log.i(TAG, "break overlay shown for $pkg")
+        } catch (e: Exception) {
+            Log.e(TAG, "break overlay error", e)
+            removeOverlay()
+        }
+    }
+
+    // ─── Overlay plumbing, shared by all three overlays ───────────────────
+
+    /** Hidden until the countdown finishes; revealed by [overlayTick]. */
+    private var overlayChoices: View? = null
+
+    private fun overlayRoot(ctx: Context): LinearLayout = LinearLayout(ctx).apply {
+        orientation = LinearLayout.VERTICAL
+        gravity = Gravity.CENTER
+        setBackgroundColor(Color.parseColor("#FF0A0A0A"))
+        isClickable = true
+        // Touches are consumed so the app underneath cannot be driven while a
+        // question is on screen. The buttons are children of this view, so
+        // they still receive their own clicks.
+        setOnTouchListener { _, _ -> true }
+    }
+
+    private fun overlayText(
+        ctx: Context,
+        text: String,
+        size: Float,
+        color: Int,
+        bold: Boolean = false,
+        padTop: Int = 0,
+    ): TextView = TextView(ctx).apply {
+        this.text = text
+        textSize = size
+        setTextColor(color)
+        if (bold) setTypeface(null, Typeface.BOLD)
+        gravity = Gravity.CENTER
+        if (padTop > 0) setPadding(dp(32), dp(padTop), dp(32), 0)
+    }
+
+    private fun overlayCountdown(ctx: Context): TextView = TextView(ctx).apply {
+        id = COUNTDOWN_ID
+        text = "5"
+        textSize = 64f
+        setTextColor(Color.parseColor("#0A84FF"))
+        setTypeface(null, Typeface.BOLD)
+        gravity = Gravity.CENTER
+    }
+
+    private fun overlayButton(ctx: Context, label: String, primary: Boolean, onTap: () -> Unit): TextView =
+        TextView(ctx).apply {
+            text = label
+            textSize = 16f
+            setTextColor(if (primary) Color.WHITE else Color.parseColor("#B3B3B3"))
+            setTypeface(null, Typeface.BOLD)
+            gravity = Gravity.CENTER
+            setPadding(dp(24), dp(14), dp(24), dp(14))
+            val bg = if (primary) Color.parseColor("#0A84FF") else Color.parseColor("#1C1C1E")
+            background = android.graphics.drawable.GradientDrawable().apply {
+                shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+                cornerRadius = dp(12).toFloat()
+                setColor(bg)
+                setStroke(dp(1), Color.parseColor("#3A3A3C"))
+            }
+            setOnClickListener { onTap() }
+        }
+
+    /**
+     * Adds [root] over everything and starts the 5→1 countdown.
+     *
+     * [mode] is a parameter rather than read from [overlayMode] because this
+     * calls removeOverlay(), which clears the field: a mode set by the caller
+     * beforehand would be wiped here and the overlay would come up with no
+     * idea what it is.
+     */
+    private fun startOverlay(root: View, mode: String) {
+        if (!canDrawOverlay()) {
+            // Only the block overlay has a Flutter fallback worth taking; the
+            // two interstitials are questions, and the honest answer to a
+            // question that cannot be displayed is not to ask it.
+            val wasBlock = mode == "block"
+            val group = overlayGroup
+            val feature = overlayFeature ?: ""
+            removeOverlay()
+            if (wasBlock) launchLockScreenActivity(group, feature, skipCountdown = false)
+            return
+        }
+
+        removeOverlay()
+        overlayMode = mode
+        overlayCountdown = 5
+        overlayActive = true
+        overlayChoices = null
+
+        val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
+        } else {
+            @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE
+        }
+        val params = WindowManager.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            type,
+            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON,
+            PixelFormat.OPAQUE
+        )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            params.layoutInDisplayCutoutMode =
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
+
+        val wm = getSystemService(WINDOW_SERVICE) as WindowManager
+        wm.addView(root, params)
+        overlayView = root
+
+        overlayHandler.removeCallbacks(overlayTick)
+        overlayHandler.post(overlayTick)
+    }
+
+    private fun canDrawOverlay(): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(this)
+
     private val overlayTick = object : Runnable {
         override fun run() {
             if (!overlayActive) return
             if (overlayCountdown > 0) {
-                overlayView?.findViewById<TextView>(0x1001)?.text = overlayCountdown.toString()
+                overlayView?.findViewById<TextView>(COUNTDOWN_ID)?.text = overlayCountdown.toString()
                 overlayCountdown--
                 overlayHandler.postDelayed(this, 1000)
-            } else {
-                removeOverlay()
-                launchLockScreenActivity(overlayGroup, overlayFeature ?: "", skipCountdown = true)
+                return
+            }
+            when (overlayMode) {
+                "block" -> {
+                    removeOverlay()
+                    launchLockScreenActivity(overlayGroup, overlayFeature ?: "", skipCountdown = true)
+                }
+                // Gate and reminder both stop here and wait for a tap. The
+                // countdown ending is not permission to dismiss them.
+                else -> {
+                    overlayView?.findViewById<TextView>(COUNTDOWN_ID)?.visibility = View.GONE
+                    overlayChoices?.visibility = View.VISIBLE
+                }
             }
         }
     }
@@ -990,6 +1383,8 @@ class UsageAccessibilityService : AccessibilityService() {
         } catch (_: Exception) {}
         overlayView = null
         overlayActive = false
+        overlayChoices = null
+        overlayMode = ""
         overlayHandler.removeCallbacks(overlayTick)
     }
 
@@ -1019,6 +1414,10 @@ class UsageAccessibilityService : AccessibilityService() {
     override fun onDestroy() {
         recheckHandler.removeCallbacksAndMessages(null)
         deadlineHandler.removeCallbacksAndMessages(null)
+        breakHandler.removeCallbacksAndMessages(null)
+        // Leave nothing on screen that the user cannot dismiss: a gate or a
+        // reminder has no Flutter fallback and no auto-dismiss, so a view
+        // surviving service death would be an overlay they cannot get rid of.
         removeOverlay()
         super.onDestroy()
     }

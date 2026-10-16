@@ -51,5 +51,63 @@ void main() {
       expect(restored.bannedFeatures.length, equals(1));
       expect(restored.bannedFeatures.first.name, equals('YouTube Shorts'));
     });
+
+    test('interstitials default to off and survive a round trip', () {
+      final group = AppGroup(
+        name: 'Social Media',
+        packageNames: ['com.instagram.android'],
+        timeLimitMinutes: 30,
+      );
+      // Off by default: a newly created group must not inherit friction the
+      // user never asked for.
+      expect(group.breakReminderEnabled, isFalse);
+      expect(group.openGateEnabled, isFalse);
+      expect(group.breakReminderMinutes, equals(10));
+
+      group.breakReminderEnabled = true;
+      group.openGateEnabled = true;
+      group.breakReminderMinutes = 25;
+      final restored = AppGroup.fromJson(group.toJson());
+      expect(restored.breakReminderEnabled, isTrue);
+      expect(restored.openGateEnabled, isTrue);
+      expect(restored.breakReminderMinutes, equals(25));
+    });
+
+    test('a group stored before these fields loads as off', () {
+      // Exactly the shape written by an older build. Loading must not throw
+      // and must not switch anything on — the Kotlin side reads the same keys
+      // with optBoolean, so the two agree on what an old payload means.
+      final restored = AppGroup.fromJson({
+        'name': 'Entertainment',
+        'packageNames': ['com.google.android.youtube'],
+        'timeLimitMinutes': 60,
+      });
+      expect(restored.breakReminderEnabled, isFalse);
+      expect(restored.openGateEnabled, isFalse);
+      expect(restored.breakReminderMinutes, equals(10));
+    });
+
+    test('breakReminderMinutes is clamped to a sane range', () {
+      // A stored or hand-edited value must not be able to make the reminder
+      // fire instantly or effectively never.
+      expect(
+        AppGroup(
+          name: 'g',
+          packageNames: const [],
+          timeLimitMinutes: 30,
+          breakReminderMinutes: 0,
+        ).breakReminderMinutes,
+        equals(1),
+      );
+      expect(
+        AppGroup(
+          name: 'g',
+          packageNames: const [],
+          timeLimitMinutes: 30,
+          breakReminderMinutes: 99999,
+        ).breakReminderMinutes,
+        equals(60),
+      );
+    });
   });
 }

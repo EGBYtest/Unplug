@@ -252,6 +252,51 @@ void main() {
       );
     });
 
+    test('the Kotlin side reads the interstitial group keys by name', () {
+      // Same hazard as the bonus keys, with a quieter failure: Dart writes
+      // breakReminderEnabled / openGateEnabled into app_groups JSON and the
+      // limiter is the only reader. Rename either side and the switches keep
+      // toggling in Settings while the overlay never once appears — which
+      // looks exactly like the feature being broken, not like a typo.
+      final source = File(
+        'android/app/src/main/kotlin/com/egbytest/unplug/UsageAccessibilityService.kt',
+      ).readAsStringSync();
+
+      for (final key in [
+        'breakReminderEnabled',
+        'openGateEnabled',
+        'breakReminderMinutes',
+      ]) {
+        expect(
+          source,
+          contains('"$key"'),
+          reason: 'UsageAccessibilityService must read "$key", the key '
+              'AppGroup.toJson writes it under',
+        );
+      }
+    });
+
+    test('the Kotlin side reads the new keys as optional', () {
+      // An install whose stored groups predate these fields must load as "off"
+      // rather than throwing inside the accessibility event handler, where the
+      // exception would be swallowed by the catch-all and silently disable
+      // enforcement for that event.
+      final source = File(
+        'android/app/src/main/kotlin/com/egbytest/unplug/UsageAccessibilityService.kt',
+      ).readAsStringSync();
+
+      expect(
+        source,
+        contains('optBoolean("openGateEnabled", false)'),
+        reason: 'must default to off, matching AppGroup.fromJson, so an older '
+            'stored group cannot throw in the event handler',
+      );
+      expect(
+        source,
+        contains('optBoolean("breakReminderEnabled", false)'),
+      );
+    });
+
     // The exact bug the user reported: at 50m used against a 40m limit, a 5m
     // bonus used to raise the ceiling to 45m — still under the usage, so it
     // appeared to do nothing and had to be earned three times over.

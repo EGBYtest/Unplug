@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <strong>Version 2.1.1</strong> · Android 7.0+ · Free · No accounts
+  <strong>Version 2.2.0</strong> · Android 7.0+ · Free · No accounts
 </p>
 
 ---
@@ -76,6 +76,20 @@ These manufacturers bury the accessibility list somewhere different, and their b
 - Also add it to your auto-start / battery optimisation allowlist
 - If enforcement stops working after a reboot or a nap, this is why
 </details>
+
+---
+
+## Two more ways to catch yourself
+
+Both are **off by default** and both are set **per group**, so you can gate a messaging app and leave a two-tap calculator alone. Settings → tap a group → the two rows at the bottom of the sheet.
+
+**Open gate.** Every time you open one of that group's apps, a full-screen countdown runs with no way through. After five seconds two buttons appear: **Open Instagram**, or **Go back**. The app isn't closed or paused behind it — the gate is just a question, asked on top of an app that already launched. Leaving the screen dismisses it.
+
+**Break reminder.** After you've been in one of that group's apps *continuously* for a set number of minutes (10 by default, 1–60 if you prefer), it asks whether this was meant to be a long sit or a quick check. It doesn't dismiss itself and it doesn't close anything — after five seconds a **Close** button appears, and it's waiting for you.
+
+Both work the same way the lock screen does: a real system-level overlay, drawn over everything including the launcher. And both lose to the time limit — if you're out, you get the lock screen, not a gentler version of it.
+
+Turning one **on** is free. Turning it **off** asks the same challenge as any other settings change, because that's the direction that ought to cost something.
 
 ---
 
