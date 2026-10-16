@@ -399,12 +399,42 @@ class StorageService {
   int getBonusAnchorMinutes(String groupName) =>
       getBonusAnchorMinutesOrNull(groupName) ?? 0;
 
-  /// Grants [seconds] of credit, anchoring to [usageMinutes] on first grant.
+  /// Grants [seconds] of credit, settling what was already spent first.
   ///
-  /// The anchor is only written when there is not one yet. Re-anchoring on a
-  /// second grant would silently refund everything spent since the first:
-  /// granting 5m, using 5m, then granting 5m would look like 10m still
-  /// available instead of 5m.
+  /// The anchor moves to [usageMinutes] on every grant, but only *after* the
+  /// balance has been settled against it. Order matters, and getting it wrong
+  /// fails in both directions:
+  ///
+  ///  * Re-anchoring without settling refunds everything used since the last
+  ///    grant, silently doubling the payout.
+  ///  * Never re-anchoring is worse, and is what this replaced. The anchor
+  ///    stayed pinned to the first grant of the day, so every minute spent
+  ///    after it was subtracted from the running total forever — including
+  ///    credit earned much later. Observed on device: anchor pinned at 30m,
+  ///    25 minutes used since, then a 3 minute reward granted. Credit was 9
+  ///    minutes, usage past the anchor was 25, so the balance computed to
+  ///    zero: the dashboard read "no bonus time" the instant it was granted,
+  ///    and the ceiling was 39m against 55m of usage, so the group stayed
+  ///    blocked. The 3 minutes bought nothing *and* retroactively destroyed
+  ///    the earlier grant.
+  ///
+  /// Settling first makes "+3m" mean three more minutes from where the user is
+  /// standing, which is the only reading anyone would give those words.
+  ///
+  /// Settling preserves the ceiling exactly: anchor + credit is invariant
+  /// under settle-then-re-anchor whenever the credit has not already run out,
+  /// because (anchor + spent) + (credit - spent) == anchor + credit. It only
+  /// moves the ceiling when the credit *was* exhausted — and then it moves it
+  /// up, because the exhausted credit was already worth nothing and the new
+  /// grant is measured from a usage reading that is finally true.
+  ///
+  /// [usageMinutes] is a reading that can come back wrong: usage access can
+  /// fail, and it can legitimately read lower than the last grant after a
+  /// hiccup or a reset-hour change mid-day. The anchor therefore only ever
+  /// moves forward. A failed query settles nothing and re-anchors nothing, so
+  /// a reward can never be lost to a bad reading — the failure mode of
+  /// anchoring to 0 would be a ceiling of 0, confiscating every bonus the
+  /// user has paid for.
   Future<void> addBonusSeconds(
     String groupName,
     int seconds, {
@@ -413,11 +443,26 @@ class StorageService {
     final key = _bonusKey(groupName);
     final anchorKey = _bonusAnchorKey(groupName);
     final current = _prefs?.getInt(key) ?? 0;
+    final existingAnchor = _prefs?.getInt(anchorKey);
     unawaited(_purgeStaleBonuses());
-    if ((_prefs?.getInt(anchorKey) ?? -1) < 0) {
-      await _prefs?.setInt(anchorKey, usageMinutes);
-    }
-    await _prefs?.setInt(key, current + seconds);
+
+    // Credit that has not already been spent cannot be refunded, so anything
+    // beyond the anchor is written off rather than carried into the new grant.
+    final spent = existingAnchor != null && usageMinutes > existingAnchor
+        ? (usageMinutes - existingAnchor) * 60
+        : 0;
+    final settled = current - spent;
+    final carried = settled > 0 ? settled : 0;
+
+    // Forward-only. A reading below the stored anchor is not trusted to pull
+    // the anchor back, which is what would let a bad reading hand out free
+    // screen time by looking like unspent credit.
+    final anchor = existingAnchor != null && usageMinutes < existingAnchor
+        ? existingAnchor
+        : usageMinutes;
+
+    await _prefs?.setInt(anchorKey, anchor);
+    await _prefs?.setInt(key, carried + seconds);
   }
 
   /// Credit remaining, in seconds.

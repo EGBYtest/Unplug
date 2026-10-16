@@ -376,20 +376,77 @@ void main() {
       );
     });
 
-    // Re-anchoring on a second grant would refund everything spent since the
-    // first, silently doubling the payout.
-test('a second grant does not re-anchor', () async {
+    // The anchor does move on a second grant, but only after the balance has
+    // been settled, so nothing already spent comes back. anchor + credit is
+    // unchanged by the round trip: 50 + 10 == 53 + 7.
+    test('a second grant re-anchors without refunding what was spent',
+        () async {
       await StorageService()
           .addBonusSeconds('Social Media', 5 * 60, usageMinutes: 50);
       await StorageService()
           .addBonusSeconds('Social Media', 5 * 60, usageMinutes: 53);
 
-      expect(StorageService().getBonusAnchorMinutes('Social Media'), 50);
-      // Credit reaches anchor + both grants = 50 + 10 = 60m. Usage at 53m
-      // has 7m of it left.
+      expect(StorageService().getBonusAnchorMinutes('Social Media'), 53);
+      // Credit reaches anchor + both grants = 53 + 7 = 60m, the same ceiling
+      // the pinned anchor produced. Usage at 53m has all 7m of it left.
+      expect(
+        StorageService().effectiveLimitMinutes('Social Media', 40, 53),
+        60,
+      );
       expect(
         StorageService().remainingBonusSeconds('Social Media', 53),
         7 * 60,
+      );
+    });
+
+    // The bug this replaced: the anchor was written on the first grant of the
+    // day and never moved, so every minute spent since was subtracted from the
+    // running total forever — retroactively cancelling credit earned later.
+    // The reward landed, the dashboard read "no bonus time" straight after,
+    // and the ceiling stayed under the usage so the group stayed blocked.
+    test('a grant is not eaten by usage that predates it', () async {
+      await StorageService()
+          .addBonusSeconds('Doomscroll', 6 * 60, usageMinutes: 30);
+      // 25 minutes of use since that first grant.
+      await StorageService()
+          .addBonusSeconds('Doomscroll', 3 * 60, usageMinutes: 55);
+
+      // The exhausted 6 minutes are written off, and the 3 just earned are
+      // measured from where the user actually is.
+      expect(
+        StorageService().remainingBonusSeconds('Doomscroll', 55),
+        3 * 60,
+      );
+      // 55 + 3 = 58. The pinned anchor would have said 30 + 9 = 39, which is
+      // under 55m of usage, so the group stayed blocked on a reward the user
+      // had just sat through a full minute to earn.
+      expect(
+        StorageService().effectiveLimitMinutes('Doomscroll', 50, 55),
+        58,
+      );
+      expect(
+          55 < StorageService().effectiveLimitMinutes('Doomscroll', 50, 55),
+          isTrue);
+    });
+
+    // A usage reading that comes back wrong must not be able to confiscate
+    // credit. Anchoring to a failed query's 0 would put the ceiling at the
+    // granted total alone and silently destroy every bonus the user holds.
+    test('a bad usage reading cannot take the credit with it', () async {
+      await StorageService()
+          .addBonusSeconds('Social Media', 5 * 60, usageMinutes: 50);
+
+      // Usage access failed and reported nothing.
+      await StorageService().addBonusSeconds('Social Media', 5 * 60);
+
+      expect(StorageService().getBonusAnchorMinutes('Social Media'), 50);
+      expect(
+        StorageService().effectiveLimitMinutes('Social Media', 40, 50),
+        60,
+      );
+      expect(
+        StorageService().remainingBonusSeconds('Social Media', 50),
+        10 * 60,
       );
     });
 
