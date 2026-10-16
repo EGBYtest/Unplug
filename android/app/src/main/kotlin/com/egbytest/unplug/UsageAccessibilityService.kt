@@ -123,14 +123,11 @@ class UsageAccessibilityService : AccessibilityService() {
 
             val pkg = event.packageName?.toString()?.trim() ?: return
 
-            // Observed before the self/system filter, because "the user left
-            // the restricted app" is exactly the transition this filter hides.
-            if (type == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED && pkg != packageName) {
-                // Our own overlay is an accessibility overlay owned by this
-                // service, so adding and removing it produces window state
-                // changes under our own package name. Counting those as the
-                // foreground changing would clear gateShownFor the moment the
-                // gate went up, so it would immediately re-arm over itself.
+            // Observed before the system filter, because the gate has to see
+            // app entries. onForegroundChanged does its own system-surface
+            // check, which is what keeps this safe for our own overlay and
+            // for the notification shade: neither may count as leaving.
+            if (type == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
                 onForegroundChanged(pkg)
             }
 
@@ -927,19 +924,52 @@ class UsageAccessibilityService : AccessibilityService() {
         }
     }
 
+    /** Our own package, plus the launcher and system UI, which never end a session. */
+    private fun isSystemSurface(pkg: String): Boolean =
+        pkg == packageName ||
+            pkg.startsWith("com.android.") ||
+            pkg.startsWith("com.systemui") ||
+            pkg.startsWith("com.google.android.") ||
+            pkg == "android"
+
     /**
      * A restricted app lost or gained the foreground. Ends the previous
      * continuous-use session and, on entering one, offers the open gate.
      */
     private fun onForegroundChanged(pkg: String) {
         if (pkg == lastForegroundPkg) return
+
+        // A system surface taking the foreground is not leaving the app.
+        //
+        // This hook runs ahead of the com.android.* / com.systemui filter,
+        // deliberately, because the gate has to see app entries. That makes
+        // the notification shade, a permission dialog, a system toast, and
+        // this service's own overlay all arrive here too. Ending a continuous
+        // use session on any of those means a ten-minute reminder dies the
+        // moment you check a notification, so the timer is ignored for
+        // surfaces that are not another app.
+        //
+        // lastForegroundPkg is left alone on purpose: a transient system
+        // window must not overwrite the app we believe is in front, or the
+        // reminder's own revalidation would reject the session it is still
+        // counting.
+        if (isSystemSurface(pkg)) {
+            // Only log while a session is actually at stake, and only on the
+            // transitions that used to kill it. This is the line to look for
+            // if a reminder ever fails to appear again.
+            if (breakSessionPkg.isNotEmpty() && pkg != breakSessionPkg) {
+                Log.i(TAG, "break session kept through $pkg")
+            }
+            return
+        }
+
         val previous = lastForegroundPkg
         lastForegroundPkg = pkg
 
-        // Leaving a restricted app ends its session. Not conditional on the
-        // group having the reminder on: a session that stopped counting when
-        // the setting was switched off mid-sit must not resume counting as if
-        // it had run continuously.
+        // Leaving a restricted app for another app ends its session. Not
+        // conditional on the group having the reminder on: a session that
+        // stopped counting when the setting was switched off mid-sit must not
+        // resume counting as if it had run continuously.
         if (breakSessionPkg.isNotEmpty() && breakSessionPkg != pkg) {
             endBreakSession("left for $pkg")
         }
