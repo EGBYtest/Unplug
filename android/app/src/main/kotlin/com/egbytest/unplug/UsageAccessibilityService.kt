@@ -96,17 +96,29 @@ class UsageAccessibilityService : AccessibilityService() {
 
     // ─── Continuous-use session ─────────────────────────────────────────
     //
-    // Start of the current uninterrupted sit in one restricted app, used only
-    // by the break reminder. Reset on a foreground transition away, and
-    // re-validated when the reminder fires rather than trusted blindly: the
-    // session can end without any event reaching this service at all (screen
-    // off, app killed from recents), and the reminder must not fire over a
-    // session that ended ten minutes ago.
+    // Start of the current uninterrupted sit in one restricted app. Reset on a
+    // foreground transition away, and re-validated when the reminder fires
+    // rather than trusted blindly: the session can end without any event
+    // reaching this service at all (screen off, app killed from recents), and
+    // the reminder must not fire over a session that ended ten minutes ago.
+    //
+    // The session is tracked whether or not the break reminder is switched on,
+    // because enforcement needs it too: UsageStatsManager does not count the
+    // app that is in the foreground *right now*, so without this the limiter is
+    // blind to the minutes a user is spending at the moment they are spending
+    // them. See [enforcedUsageMinutes].
     private val breakHandler = Handler(Looper.getMainLooper())
     private var breakSessionPkg = ""
     private var breakSessionStart = 0L
     private var breakMinutes = 10
     private var breakFiredThisSession = false
+
+    // Group owning [breakSessionPkg], and that group's reported usage at the
+    // moment the session began. Together with [breakSessionStart] these turn
+    // "how long have they been sitting in it" into an in-flight usage estimate
+    // that the committed numbers cannot yet account for.
+    private var sessionGroup = ""
+    private var sessionBaseUsed = 0
 
     /** Milliseconds. Guards against a zero/garbage persisted value. */
     private fun breakThresholdMs(): Long =
@@ -227,7 +239,7 @@ class UsageAccessibilityService : AccessibilityService() {
             }
 
             // Check time limit
-            val usedMinutes = groupUsageMinutes(groupName, prefs)
+            val usedMinutes = enforcedUsageMinutes(groupName, prefs)
             val totalLimit = effectiveLimitMinutes(groupName, limit, usedMinutes, prefs)
             if (totalLimit == 0) { blockApp(pkg, groupName); return }
 
@@ -397,6 +409,59 @@ class UsageAccessibilityService : AccessibilityService() {
         }
     }
 
+    // ─── Enforced usage ──────────────────────────────────────────────────
+    //
+    // [groupUsageMinutes] on its own cannot enforce a limit, because Android
+    // does not count the app that is in the foreground right now.
+    //
+    // UsageStatsManager aggregates each interval into the total only once that
+    // interval closes. An app that is still on screen is mid-interval, so its
+    // time sits in the system but not yet in `totalTimeInForeground`. Observed
+    // on device (OnePlus, Android 16): seven minutes of continuous scrolling
+    // at ~5 accessibility events per second, and the reading never moved —
+    // 46m the whole time. The instant the app was backgrounded the same query
+    // returned 52m. That is not a rounding artefact; it is a whole session.
+    //
+    // The consequence was that the limiter could not see the minutes being
+    // spent at the moment they were being spent, so a user sitting in a
+    // restricted app was never blocked while they were in it, and was blocked
+    // the moment they came back. The break reminder looked fine because it is
+    // pure wall-clock and never consults the usage query at all.
+    //
+    // The service already knows how long the current uninterrupted sit has been
+    // running, so it can supply the missing interval itself:
+    //
+    //     enforced = max(reported, readingAtSessionStart + timeSinceStart)
+    //
+    // max() is what makes this safe in both directions. Under-reporting is the
+    // failure being fixed, so the estimate must win whenever it is larger.
+    // Over-reporting is the opposite hazard — once the system commits the
+    // interval, the reported total already contains it and adding it again
+    // would burn the user's time twice. Taking the larger of the two lets the
+    // system catch up and take over, with no flag to clear and no window where
+    // the two disagree about who is right.
+
+    /**
+     * Usage to enforce against: the committed reading, raised by the
+     * in-flight session when the committed numbers have not caught up yet.
+     *
+     * Known bound: if the service process dies and is rebound while the user
+     * is still sitting in a restricted app, the session is rebuilt from the
+     * first event after the restart, so the estimate starts from the reading
+     * as of that moment and the pre-restart portion of the sit is not counted
+     * until the system commits it. That grants at most the length of the
+     * interrupted session, once, and only on a process death — cheap enough
+     * that seeding it from persisted state is not worth the staleness that
+     * would introduce.
+     */
+    private fun enforcedUsageMinutes(groupName: String, prefs: SharedPreferences): Int {
+        val reported = groupUsageMinutes(groupName, prefs)
+        if (sessionGroup != groupName || breakSessionStart <= 0L) return reported
+        val inFlightMin = ((System.currentTimeMillis() - breakSessionStart) / 60_000L).toInt()
+        val estimate = sessionBaseUsed + inFlightMin
+        return if (estimate > reported) estimate else reported
+    }
+
     // ─── In-app feature detection ─────────────────────────────────────────
     //
     // Multi-signal detector for short-form content tabs (Snapchat
@@ -552,12 +617,43 @@ class UsageAccessibilityService : AccessibilityService() {
     private var deadlineLimit = 0
     private var deadlineLogKey = ""
 
+    /**
+     * Absolute epoch millis the armed check is due, or 0 when nothing is armed.
+     *
+     * The deadline has to be an instant, not a span. armDeadline is reached
+     * from the per-event path, which during any real use runs several times a
+     * second, and each of those calls re-armed the timer from "now". A deadline
+     * can therefore only ever fire after a full remaining-window of event
+     * silence — which is the one thing a user scrolling an app never does.
+     *
+     * Observed on device: a 4 minute deadline on a 50 minute limit, armed once
+     * at 15:59:32, and still unfired at 16:06 — more than six minutes past due,
+     * with 297 accessibility events a minute arriving the whole time. The user
+     * sat past their limit and was never ejected, while the break reminder,
+     * which arms exactly once per session, fired on schedule.
+     *
+     * Holding the instant makes the hot path idempotent: a re-arm that would
+     * land later than what is already armed is ignored, so only a limit that
+     * comes *forward* — a smaller limit, bonus time removed, a reset hour
+     * passed — can move the deadline sooner.
+     */
+    private var deadlineAt = 0L
+
     private fun armDeadline(group: String, limit: Int, usedMinutes: Int, totalLimit: Int) {
         val remainingSec = (totalLimit - usedMinutes) * 60L
+        if (remainingSec <= 0L) {
+            deadlineHandler.removeCallbacks(deadlineCheck)
+            deadlineAt = 0L
+            return
+        }
+        val now = System.currentTimeMillis()
+        val target = now + remainingSec * 1000L
+        if (deadlineGroup == group && deadlineAt in 1 until target) return
+
         deadlineHandler.removeCallbacks(deadlineCheck)
-        if (remainingSec <= 0L) return
         deadlineGroup = group
         deadlineLimit = limit
+        deadlineAt = target
         // Handler delays are MILLISECONDS. Passing seconds here once armed a
         // 17-minute deadline at 1020ms, which turned this into a self
         // re-arming once-a-second loop on the main looper — the same looper
@@ -566,7 +662,7 @@ class UsageAccessibilityService : AccessibilityService() {
         // anything, and because the loop re-armed itself, no amount of leaving
         // the app helped. Observed on device: "deadline armed ... in 17m"
         // repeating once every 1.025s until the process was restarted.
-        val delayMs = remainingSec * 1000L
+        val delayMs = target - now
         // Floor and ceiling are belt and braces. Nothing about a limit change
         // should be able to turn this into a hot loop again, and a re-arm
         // that lands every few seconds is indistinguishable from the bug
@@ -576,8 +672,8 @@ class UsageAccessibilityService : AccessibilityService() {
         // Only log when the deadline actually moves. armDeadline runs on every
         // accessibility event, so logging unconditionally puts two lines per
         // event into logcat from the hottest path in the app.
-        if (deadlineLogKey != "$group/$safeDelayMs") {
-            deadlineLogKey = "$group/$safeDelayMs"
+        if (deadlineLogKey != "$group/${safeDelayMs / 1000L}") {
+            deadlineLogKey = "$group/${safeDelayMs / 1000L}"
             Log.i(TAG, "deadline armed for $group in ${remainingSec / 60}m ($usedMinutes/$totalLimit)")
         }
     }
@@ -585,10 +681,11 @@ class UsageAccessibilityService : AccessibilityService() {
     private val deadlineCheck = object : Runnable {
         override fun run() {
             val group = deadlineGroup
+            deadlineAt = 0L
             if (group.isEmpty()) return
             try {
                 val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
-                val used = groupUsageMinutes(group, prefs)
+                val used = enforcedUsageMinutes(group, prefs)
                 val total = effectiveLimitMinutes(group, deadlineLimit, used, prefs)
                 if (total == 0 || used >= total) {
                     Log.i(TAG, "deadline hit for $group: ${used}m >= ${total}m — sweeping visible windows")
@@ -995,7 +1092,7 @@ class UsageAccessibilityService : AccessibilityService() {
             // block is the correct response there and it is about to arrive;
             // a gate in front of it would swallow the entry that triggers it.
             val name = group.optString("name", "")
-            val used = groupUsageMinutes(name, prefs)
+            val used = enforcedUsageMinutes(name, prefs)
             val total = effectiveLimitMinutes(name, group.optInt("timeLimitMinutes", 0), used, prefs)
             if (total == 0 || used >= total) return
 
@@ -1011,22 +1108,41 @@ class UsageAccessibilityService : AccessibilityService() {
 
     /** Called from the under-limit branch of checkAndBlock, on every event. */
     private fun trackBreakSession(pkg: String, group: JSONObject) {
+        // Bookkeeping first, and unconditionally. The break reminder being off
+        // must not stop the session being measured: enforcement reads that
+        // measurement on every check, and a group with the reminder off was
+        // previously invisible to it — which is precisely the case where the
+        // limiter could not see a user sitting inside a restricted app.
+        val now = System.currentTimeMillis()
+        if (breakSessionPkg != pkg) {
+            breakHandler.removeCallbacks(breakCheck)
+            val name = group.optString("name", "")
+            breakSessionPkg = pkg
+            breakSessionStart = now
+            breakFiredThisSession = false
+            sessionGroup = name
+            // Snapshot the committed reading the estimate is measured from. A
+            // failed query yields 0, which only ever under-estimates; the
+            // max() in enforcedUsageMinutes then defers to the reported value.
+            sessionBaseUsed = try {
+                groupUsageMinutes(name, getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE))
+            } catch (_: Exception) {
+                0
+            }
+        }
+
         if (!group.optBoolean("breakReminderEnabled", false)) {
-            if (breakSessionPkg == pkg) endBreakSession("group setting off")
+            // Deliberately does NOT end the session. The reminder being off
+            // says nothing about whether the user is still sitting in the app,
+            // and enforcement reads this session on every check. Tearing it
+            // down here would hand back the minutes already spent in this sit
+            // and let a user past their limit by toggling a setting off.
             return
         }
         breakMinutes = group.optInt(
             "breakReminderMinutes",
             10,
         ).coerceIn(1, 60)
-
-        val now = System.currentTimeMillis()
-        if (breakSessionPkg != pkg) {
-            breakHandler.removeCallbacks(breakCheck)
-            breakSessionPkg = pkg
-            breakSessionStart = now
-            breakFiredThisSession = false
-        }
 
         // One arm per session. Re-arming on every event is what turned the
         // limit deadline into a once-a-second loop in v2.0.2; the session timer
@@ -1051,6 +1167,8 @@ class UsageAccessibilityService : AccessibilityService() {
         breakSessionPkg = ""
         breakSessionStart = 0L
         breakFiredThisSession = false
+        sessionGroup = ""
+        sessionBaseUsed = 0
     }
 
     private val breakCheck = object : Runnable {
@@ -1472,7 +1590,7 @@ class UsageAccessibilityService : AccessibilityService() {
                 val p = root.packageName?.toString()?.trim() ?: continue
                 val pair = pkgToGroup[p] ?: continue
                 val (name, limit) = pair
-                val used = groupUsageMinutes(name, prefs)
+                val used = enforcedUsageMinutes(name, prefs)
                 val totalLimit = effectiveLimitMinutes(name, limit, used, prefs)
                 if (totalLimit == 0 || used >= totalLimit) {
                     blockApp(p, name); return
