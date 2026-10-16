@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <strong>Version 2.2.0</strong> · Android 7.0+ · Free · No accounts
+  <strong>Version 2.2.1</strong> · Android 7.0+ · Free · No accounts
 </p>
 
 ---
@@ -89,7 +89,7 @@ Both are **off by default** and both are set **per group**, so you can gate a me
 
 Both work the same way the lock screen does: a real system-level overlay, drawn over everything including the launcher. And both lose to the time limit — if you're out, you get the lock screen, not a gentler version of it.
 
-Turning one **on** is free. Turning it **off** asks the same challenge as any other settings change, because that's the direction that ought to cost something.
+Turning one **on** asks the same challenge as any other settings change — it's the one action here that changes what happens later, unprompted, while you're not there to see it. Turning one **off** is free, because a setting you can't undo without a hurdle isn't a setting. And once a reminder is already on, changing how long it takes to appear is free too.
 
 ---
 
