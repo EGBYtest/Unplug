@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'services/reward_gate.dart';
+import 'services/settings_gate.dart';
 import 'services/message_verification.dart';
 import 'services/storage_service.dart';
 import 'services/usage_tracker.dart';
@@ -118,6 +119,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  // ─── Directional gating ─────────────────────────────────────────────────
+  //
+  // Every numeric setting here has a direction that helps the user and a
+  // direction that does not, and the challenge belongs on the one that does
+  // not.
+  //
+  // Charging a price for *tightening* means the user cannot make the app
+  // stricter without permission, which is the same thing as not letting them
+  // arm it in the first place. "Tighten freely, loosen for a wait" is the same
+  // trade the in-app tab blockers already make (switch on free, switch off
+  // gated) and the same one the two interstitials make, applied to numbers
+  // instead of switches.
+  //
+  // It has to be decided where the new value is known, which is inside the
+  // picker's save handler. Gating the tap that *opens* a picker cannot work:
+  // it charges for a change before the user has chosen one, and cannot tell
+  // 40m from 30m at all — which is the whole question.
+  Future<void> _applyLoosening(Future<void> Function() apply,
+      {required bool loosens}) async {
+    if (loosens) {
+      _confirmChange(() => apply());
+    } else {
+      await apply();
+    }
+  }
+
   void _typeToUnlock(VoidCallback action) {
     final ctrl = TextEditingController();
     final target = MessageVerification().generateMessage();
@@ -195,14 +222,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   // ─── Edit Group Limit ─────────────────────────────────────────────────────
 
-  void _editLimit(int index) {
+  Future<void> _editLimit(int index) async {
     final group = _groups[index];
-    int tempMinutes = group.timeLimitMinutes % 60;
-    int tempHours = group.timeLimitMinutes ~/ 60;
+    final before = group.timeLimitMinutes;
+    int tempMinutes = before % 60;
+    int tempHours = before ~/ 60;
 
-    showCupertinoModalPopup(
+    final totalMinutes = await showCupertinoModalPopup<int>(
       context: context,
-      builder: (_) => Container(
+      builder: (popupContext) => Container(
         height: 340,
         decoration: const BoxDecoration(
           color: Color(0xFF1C1C1E),
@@ -224,23 +252,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   CupertinoButton(
                     padding: EdgeInsets.zero,
                     child: const Text('Save', style: TextStyle(color: Color(0xFF0A84FF), fontWeight: FontWeight.bold)),
-                    onPressed: () async {
-                      final totalMinutes = tempHours * 60 + tempMinutes;
-                      // Only the limit changes here; rebuilding without the
-                      // rest of the group would clear bannedFeatures and both
-                      // interstitial flags as a side effect of picking a time.
-                      setState(() => _groups[index] = AppGroup(
-                        name: group.name,
-                        packageNames: group.packageNames,
-                        timeLimitMinutes: totalMinutes,
-                        bannedFeatures: group.bannedFeatures,
-                        breakReminderEnabled: group.breakReminderEnabled,
-                        openGateEnabled: group.openGateEnabled,
-                        breakReminderMinutes: group.breakReminderMinutes,
-                      ));
-                      await _storage.saveGroups(_groups);
-                      if (mounted) Navigator.pop(context);
-                    },
+                    // Returns the chosen total rather than applying it, so the
+                    // direction can be compared against the old value with the
+                    // picker already closed.
+                    onPressed: () => Navigator.pop(
+                        popupContext, tempHours * 60 + tempMinutes),
                   ),
                 ],
               ),
@@ -251,7 +267,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             Expanded(
               child: CupertinoTimerPicker(
                 mode: CupertinoTimerPickerMode.hm,
-                initialTimerDuration: Duration(minutes: group.timeLimitMinutes),
+                initialTimerDuration: Duration(minutes: before),
                 onTimerDurationChanged: (d) {
                   tempHours = d.inHours;
                   tempMinutes = d.inMinutes % 60;
@@ -262,21 +278,43 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       ),
     );
+
+    if (totalMinutes == null) return;
+
+    // More time is a looser limit and costs a wait; less time is the user
+    // tightening their own guard, which is free. Re-saving the number that was
+    // already there is not a change at all and must not charge for one.
+    await _applyLoosening(() async {
+      // Only the limit changes here; rebuilding without the rest of the group
+      // would clear bannedFeatures and both interstitial flags as a side
+      // effect of picking a time.
+      setState(() => _groups[index] = AppGroup(
+        name: group.name,
+        packageNames: group.packageNames,
+        timeLimitMinutes: totalMinutes,
+        bannedFeatures: group.bannedFeatures,
+        breakReminderEnabled: group.breakReminderEnabled,
+        openGateEnabled: group.openGateEnabled,
+        breakReminderMinutes: group.breakReminderMinutes,
+      ));
+      await _storage.saveGroups(_groups);
+    }, loosens: loosensBudget(before, totalMinutes));
   }
 
   // ─── Edit Reward ───────────────────────────────────────────────────────────
 
-  void _editAdRatio() {
+  Future<void> _editAdRatio() async {
     final options = StorageService.bonusRewardOptions();
+    final before = _bonusRewardSeconds;
     var selectedIndex = options.indexOf(_bonusRewardSeconds);
     if (selectedIndex < 0) {
       selectedIndex = options.indexOf(StorageService.defaultBonusRewardSeconds);
       if (selectedIndex < 0) selectedIndex = 0;
     }
 
-    showCupertinoModalPopup(
+    final value = await showCupertinoModalPopup<int>(
       context: context,
-      builder: (_) => Container(
+      builder: (popupContext) => Container(
         height: 340,
         decoration: const BoxDecoration(
           color: Color(0xFF1C1C1E),
@@ -298,12 +336,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   CupertinoButton(
                     padding: EdgeInsets.zero,
                     child: const Text('Save', style: TextStyle(color: Color(0xFF0A84FF), fontWeight: FontWeight.bold)),
-                    onPressed: () async {
-                      final value = options[selectedIndex];
-                      setState(() => _bonusRewardSeconds = value);
-                      await _storage.saveBonusRewardSeconds(value);
-                      if (mounted) Navigator.pop(context);
-                    },
+                    onPressed: () =>
+                        Navigator.pop(popupContext, options[selectedIndex]),
                   ),
                 ],
               ),
@@ -343,25 +377,43 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       ),
     );
+
+    if (value == null) return;
+
+    // More time per wait is more free screen time for the same effort, so it
+    // is the direction that loosens. Asking a price for *shortening* a wait
+    // would be the mirror of the limit rule and just as wrong: the user would
+    // not be able to make earning reward harder without permission.
+    await _applyLoosening(() async {
+      setState(() => _bonusRewardSeconds = value);
+      await _storage.saveBonusRewardSeconds(value);
+    }, loosens: loosensBudget(before, value));
   }
 
   // ─── Edit Wait Duration ─────────────────────────────────────────────────────
 
-  void _editWaitDuration() {
-    var totalSeconds = _waitSeconds;
+  Future<void> _editWaitDuration() async {
+    final before = _waitSeconds;
 
-    showCupertinoModalPopup(
+    final value = await showCupertinoModalPopup<int>(
       context: context,
       builder: (popupContext) => _WaitDurationSheet(
-        initialSeconds: totalSeconds,
+        initialSeconds: before,
         onCancel: () => Navigator.pop(popupContext),
-        onSave: (value) async {
-          setState(() => _waitSeconds = value);
-          await _storage.saveWaitSeconds(value);
-          if (mounted) Navigator.pop(popupContext);
-        },
+        onSave: (value) => Navigator.pop(popupContext, value),
       ),
     );
+
+    if (value == null) return;
+
+    // The wait is a cost, so its direction is the other way round from a
+    // limit. Making it longer is the user tightening the deal on themselves —
+    // same effort, less reward — and that is free. Making it shorter buys the
+    // same reward for less effort, which loosens the deal and asks the wait.
+    await _applyLoosening(() async {
+      setState(() => _waitSeconds = value);
+      await _storage.saveWaitSeconds(value);
+    }, loosens: loosensCost(before, value));
   }
 
   // ─── Edit Apps in Group ───────────────────────────────────────────────────
@@ -621,7 +673,11 @@ final bonusSeconds = _storage.remainingBonusSeconds(
                       title: const Text('Reward per Wait', style: TextStyle(color: Colors.white)),
                       additionalInfo: Text(_formatSeconds(_bonusRewardSeconds), style: const TextStyle(color: Colors.white70)),
                       trailing: const CupertinoListTileChevron(),
-                      onTap: () => _confirmChange(_editAdRatio),
+                      // Not behind _confirmChange: the challenge is decided on
+                      // save, once the chosen value is known. Gating the tap
+                      // that opens the picker would charge before a value had
+                      // been picked, and could not tell 5m from 3m.
+                      onTap: () => _editAdRatio(),
                     ),
                     CupertinoListTile(
                       backgroundColor: const Color(0xFF1C1C1E),
@@ -630,7 +686,7 @@ final bonusSeconds = _storage.remainingBonusSeconds(
                       subtitle: const Text('30s to 3m 59s', style: TextStyle(color: Colors.white38, fontSize: 12)),
                       additionalInfo: Text(_formatSeconds(_waitSeconds), style: const TextStyle(color: Colors.white70)),
                       trailing: const CupertinoListTileChevron(),
-                      onTap: () => _confirmChange(_editWaitDuration),
+                      onTap: () => _editWaitDuration(),
                     ),
                   ],
                 ),
@@ -762,7 +818,10 @@ final bonusSeconds = _storage.remainingBonusSeconds(
             ? Text('${_formatSeconds(bonusSeconds)} bonus time remaining', style: const TextStyle(color: Color(0xFF30D158), fontSize: 12))
             : null,
         actions: [
-          CupertinoActionSheetAction(child: const Text('Edit Time Limit'), onPressed: () { Navigator.pop(context); _confirmChange(() => _editLimit(index)); }),
+          // Edit Time Limit decides its own challenge on save — see
+          // _editLimit. The Apps action stays gated as it was: adding apps to
+          // a group is always the loosening direction.
+          CupertinoActionSheetAction(child: const Text('Edit Time Limit'), onPressed: () { Navigator.pop(context); _editLimit(index); }),
           CupertinoActionSheetAction(child: const Text('Edit Apps in Group'), onPressed: () { Navigator.pop(context); _confirmChange(() => _editGroupApps(index)); }),
           CupertinoActionSheetAction(
             child: Text('Break Reminder: ${group.breakReminderEnabled ? "On (${group.breakReminderMinutes}m)" : "Off"}'),

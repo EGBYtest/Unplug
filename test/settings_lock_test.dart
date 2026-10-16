@@ -436,4 +436,205 @@ void main() {
       expect(StorageService().waitSeconds, StorageService.minWaitSeconds);
     });
   });
+
+  // ─── Numeric settings gate only the loosening direction ────────────────
+  //
+  // These three used to sit behind the challenge at the tap that OPENED the
+  // picker, which meant a wait to look at a number, and no way at all to tell
+  // 40m from 30m — the challenge had already been paid before a value existed.
+  //
+  // The rule, matching the tab blockers and the two interstitials: the
+  // challenge is on the direction that makes the app more permissive, and never
+  // on the direction that makes it stricter. Charging for tightening is the
+  // same as not letting the user arm their own guard.
+  //
+  // The direction table itself is pinned in settings_gate_test.dart. These are
+  // here to prove the pickers call it — a pure function that nothing calls is
+  // not a rule, it is a comment.
+  group('numeric settings gate only the loosening direction', () {
+    Finder lastSave() => find.text('Save').last;
+
+    Future<void> openGroupSheet(WidgetTester tester) async {
+      await openSettings(tester);
+      await tester.tap(find.text('Social Media').first);
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> openLimitPicker(WidgetTester tester) async {
+      await StorageService().setSettingsLockEnabled(true);
+      await openGroupSheet(tester);
+      await tester.tap(find.text('Edit Time Limit').first);
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> openRewardPickerLocked(WidgetTester tester) async {
+      await StorageService().setSettingsLockEnabled(true);
+      await openSettings(tester);
+      await tester.tap(find.text('Reward per Wait').first);
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> openWaitPickerLocked(WidgetTester tester) async {
+      await StorageService().setSettingsLockEnabled(true);
+      await openSettings(tester);
+      await tester.tap(find.text('Wait Duration').first);
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> seedGroup(int limitMinutes) async {
+      await StorageService().saveGroups([
+        AppGroup(
+          name: 'Social Media',
+          packageNames: const ['com.instagram.android'],
+          timeLimitMinutes: limitMinutes,
+        ),
+      ]);
+    }
+
+    testWidgets('opening a picker never asks for a challenge', (tester) async {
+      // The old behaviour charged here, before any value had been chosen.
+      await seedGroup(30);
+      await openLimitPicker(tester);
+      expect(find.text('Confirm Change'), findsNothing);
+
+      await tester.tap(lastSave());
+      await tester.pumpAndSettle();
+      await openRewardPickerLocked(tester);
+      expect(find.text('Confirm Change'), findsNothing);
+
+      await tester.tap(lastSave());
+      await tester.pumpAndSettle();
+      await openWaitPickerLocked(tester);
+      expect(find.text('Confirm Change'), findsNothing);
+    });
+
+    testWidgets('lowering the daily limit is free', (tester) async {
+      // 1h30m, so the hours wheel has somewhere to go. Starting at 0h would
+      // put it on its floor and the drag would be a no-op that still passed.
+      await seedGroup(90);
+      await openLimitPicker(tester);
+
+      await tester.drag(find.byType(CupertinoPicker).first, const Offset(0, 200));
+      await tester.pumpAndSettle();
+      await tester.tap(lastSave());
+      await tester.pumpAndSettle();
+
+      expect(find.text('Confirm Change'), findsNothing);
+      expect(
+        StorageService().loadGroups().first.timeLimitMinutes,
+        lessThan(90),
+        reason: 'the drag has to have actually moved the value, or this test '
+            'would pass without proving anything',
+      );
+    });
+
+    testWidgets('raising the daily limit asks', (tester) async {
+      await seedGroup(30);
+      await openLimitPicker(tester);
+
+      await tester.drag(find.byType(CupertinoPicker).first, const Offset(0, -600));
+      await tester.pumpAndSettle();
+      await tester.tap(lastSave());
+      await tester.pumpAndSettle();
+
+      expect(find.text('Confirm Change'), findsOneWidget);
+      expect(
+        StorageService().loadGroups().first.timeLimitMinutes,
+        equals(30),
+        reason: 'more time must not land before the challenge is met',
+      );
+    });
+
+    testWidgets('saving the daily limit untouched is not a change',
+        (tester) async {
+      await seedGroup(30);
+      await openLimitPicker(tester);
+
+      await tester.tap(lastSave());
+      await tester.pumpAndSettle();
+
+      expect(find.text('Confirm Change'), findsNothing);
+      expect(StorageService().loadGroups().first.timeLimitMinutes, equals(30));
+    });
+
+    testWidgets('lowering the reward per wait is free', (tester) async {
+      await StorageService().saveBonusRewardSeconds(5 * 60);
+      await openRewardPickerLocked(tester);
+
+      // itemExtent is 40; two rows down is 5m -> 3m.
+      await tester.drag(find.byType(CupertinoPicker), const Offset(0, 80));
+      await tester.pumpAndSettle();
+      await tester.tap(lastSave());
+      await tester.pumpAndSettle();
+
+      expect(find.text('Confirm Change'), findsNothing);
+      expect(StorageService().bonusRewardSeconds, 3 * 60,
+          reason: 'the drag has to have actually moved the value');
+    });
+
+    testWidgets('raising the reward per wait asks', (tester) async {
+      await StorageService().saveBonusRewardSeconds(3 * 60);
+      await openRewardPickerLocked(tester);
+
+      await tester.drag(find.byType(CupertinoPicker), const Offset(0, -80));
+      await tester.pumpAndSettle();
+      await tester.tap(lastSave());
+      await tester.pumpAndSettle();
+
+      expect(find.text('Confirm Change'), findsOneWidget);
+      expect(StorageService().bonusRewardSeconds, 3 * 60,
+          reason: 'more free time must not land before the challenge is met');
+    });
+
+    // The wait is the one setting whose permissive end is the *lower* one:
+    // the user pays it to earn a reward, so a shorter wait is the cheaper
+    // deal and is the direction that has to ask.
+    testWidgets('lengthening the wait is free', (tester) async {
+      await StorageService().saveWaitSeconds(60);
+      await openWaitPickerLocked(tester);
+
+      await tester.drag(find.byType(CupertinoPicker).first, const Offset(0, -200));
+      await tester.pumpAndSettle();
+      await tester.tap(lastSave());
+      await tester.pumpAndSettle();
+
+      expect(find.text('Confirm Change'), findsNothing);
+      expect(StorageService().waitSeconds, greaterThan(60),
+          reason: 'the drag has to have actually moved the value');
+    });
+
+    testWidgets('shortening the wait asks', (tester) async {
+      await StorageService().saveWaitSeconds(120);
+      await openWaitPickerLocked(tester);
+
+      await tester.drag(find.byType(CupertinoPicker).first, const Offset(0, 200));
+      await tester.pumpAndSettle();
+      await tester.tap(lastSave());
+      await tester.pumpAndSettle();
+
+      expect(find.text('Confirm Change'), findsOneWidget);
+      expect(StorageService().waitSeconds, equals(120),
+          reason: 'a cheaper wait must not land before the challenge is met');
+    });
+
+    // The settings lock itself still governs everything: the directional rule
+    // decides *whether* to challenge, not whether the lock is on.
+    testWidgets('with the lock off nothing asks in either direction',
+        (tester) async {
+      await StorageService().setSettingsLockEnabled(false);
+      await seedGroup(30);
+      await StorageService().saveBonusRewardSeconds(60);
+      await openSettings(tester);
+
+      await tester.tap(find.text('Reward per Wait').first);
+      await tester.pumpAndSettle();
+      await tester.drag(find.byType(CupertinoPicker), const Offset(0, -80));
+      await tester.pumpAndSettle();
+      await tester.tap(lastSave());
+      await tester.pumpAndSettle();
+
+      expect(find.text('Confirm Change'), findsNothing);
+      expect(StorageService().bonusRewardSeconds, greaterThan(60));
+    });
+  });
 }

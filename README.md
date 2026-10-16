@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <strong>Version 2.2.5</strong> · Android 7.0+ · Free · No accounts
+  <strong>Version 2.2.6</strong> · Android 7.0+ · Free · No accounts
 </p>
 
 ---
@@ -95,6 +95,8 @@ The **break reminder** asks in one more case. Its interval is how long you can u
 
 Creating a group is free as well. A new group starts at the default limit with both of these off, so it can't loosen anything.
 
+The same rule governs the numbers — the daily limit, the reward per wait, the wait itself. Only the direction that makes things easier asks; see [Making settings stick](#making-settings-stick).
+
 ---
 
 ## When you run out
@@ -138,9 +140,26 @@ These ship switched off — turn on the ones you actually want blocked, in Setti
 
 ## Making settings stick
 
-Limits, groups and blockers all sit behind a lock. Changing one costs the same wait or writing challenge as everything else — including turning the lock off.
+Limits, groups and blockers all sit behind a lock. Loosening one costs the same wait or writing challenge as everything else — including turning the lock off.
 
 It's aimed at the 11pm version of you who is genuinely convinced that "just 5 more minutes" is a reasonable request. It's not security: those values live in ordinary storage on your phone, and someone deliberately trying to get past it on a rooted device can. It stops an impulse, not an attacker. Nothing stops you uninstalling.
+
+**Tightening is always free.** The challenge is only ever on the direction that makes the app more permissive, and never on the one that makes it stricter — so you can always make yourself *harder* to fool without paying for it. Charging a price for tightening would mean you couldn't arm your own guard without permission, which is the same as not letting you arm it at all.
+
+Concretely:
+
+| Change | Asks? |
+| --- | --- |
+| Daily limit 40m → 30m | No — stricter |
+| Daily limit 30m → 40m | Yes — more time for the same effort |
+| Reward per wait 5m → 3m | No — stricter |
+| Reward per wait 3m → 5m | Yes — more free time for the same wait |
+| Wait duration 30s → 60s | No — you made the deal harder on yourself |
+| Wait duration 60s → 30s | Yes — same reward, less effort |
+
+The wait is the one that reads backwards, and deliberately: it's the price of a reward rather than a budget, so its permissive end is the lower one. Making it longer costs you more for the same thing, which is you tightening it.
+
+Re-saving a number you didn't change isn't a change either — it never asks.
 
 ---
 
@@ -210,6 +229,7 @@ lib/
 │   ├── update_checker.dart         GitHub check, throttle, cache, fallback
 │   ├── usage_tracker.dart          Usage stats for the dashboard numbers
 │   ├── reward_gate.dart            The wait timer
+│   ├── settings_gate.dart          Which direction of a change needs a challenge
 │   └── message_verification.dart   The writing challenge
 └── android/app/src/main/kotlin/com/egbytest/unplug/
     ├── MainActivity.kt             Flutter bridge
